@@ -4066,6 +4066,43 @@ test('the Messages body carries adaptive thinking, output_config.effort and Anth
  * whose `@earendil-works/pi-ai` `anthropic-messages` transport marks exactly
  * these three positions on the same endpoint.
  */
+test('同一份工具 schema 只归一化一次，跨轮次重建复用结果', async () => {
+  // 每次尝试都会重建工具列表，而账号轮换或协议回退会把同一批工具再走一遍；
+  // 根节点归一化的答案不会因为问了第二次而改变，所以按 parameters 的对象身份
+  // 记忆化 —— 来自宿主的工具对象在整个回合里是稳定的，identity 就是精确的键。
+  //
+  // 计数放在 `type` 的 getter 上：归一化必须读它才能判断根节点类型，
+  // 而取值的次数正是「归一化走了几遍」的可观测量。
+  let reads = 0
+  const parameters = {
+    get type(): undefined { reads++; return undefined },
+    properties: { value: { type: 'string' } },
+  }
+  let calls = 0
+  const bodies: Record<string, unknown>[] = []
+  const adapter = makeAdapter({
+    rotateApiKey: async () => 'second-key',
+    fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return ++calls === 1 ? new Response('rate limited', { status: 429 }) : new Response(FINISH_STREAM)
+    }) as typeof fetch,
+  })
+  const tools = [{ name: 'tool', description: 'test', parameters }]
+  await collect(adapter.stream({ provider: 'commandcode', model: 'm', messages: [userMessage('hi')], tools }))
+  const afterFirst = reads
+  assert.ok(afterFirst > 0, '首次调用必须真的归一化')
+  // 第二次调用重建了工具列表、也经历了一次账号轮换（另一份正文），但同一份
+  // schema 已经归一化过，不该再被读一遍。
+  await collect(adapter.stream({ provider: 'commandcode', model: 'm', messages: [userMessage('hi')], tools }))
+  assert.equal(calls, 3)
+  assert.equal(reads, afterFirst, '同一份 schema 的归一化结果必须复用')
+  // 复用不等于跳过：每一次尝试的线缆上都仍是归一化后的根节点。
+  for (const body of bodies) {
+    // CLI 把工具放在 `params` 里，Provider API 放在顶层。
+    const params = (body.params ?? body) as { tools?: Array<{ input_schema: { type: string } }> }
+    assert.equal(params.tools?.[0]?.input_schema.type, 'object', '归一化结果必须仍然出现在线缆上')
+  }
+})
 test('the Messages body marks the last tool, not an earlier one', async () => {
   const { adapter, sent } = messagesAdapter(() => messagesStream('hi'))
   await collect(adapter.stream({
