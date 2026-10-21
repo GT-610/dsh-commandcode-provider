@@ -2523,7 +2523,27 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     opts?: { unfiltered?: boolean },
   ): Promise<readonly LlmModelInfo[]> {
     const connection = { ...this.deps.options() }
-    const catalog = await this.gatewayFacts.refresh(connection)
+    // The picker and the settings page's filter editor are read-only surfaces,
+    // and the list they draw is only ever a copy of what upstream published.
+    // Once this process HAS the rows, making the open wait on a network refresh
+    // is pure latency: the rows were good enough a moment ago and the refresh
+    // will be there for the next open. So a WARM source draws from memory and
+    // refreshes in the background; a source this process has never loaded still
+    // awaits the fetch, because there is nothing honest to draw and the filter
+    // editor needs the real list.
+    //
+    // The distinction is deliberately in-memory only (`loaded()`, not
+    // `snapshot()`): the on-disk copy carries no age check, so serving it as a
+    // first paint would show a catalog of unknown vintage.
+    const cached = this.gatewayFacts.loaded(connection)
+    const catalog = cached ?? await this.gatewayFacts.refresh(connection)
+    if (cached !== undefined) {
+      // `refresh()` returns from cache inside the TTL without any I/O, so the
+      // common path costs nothing, and an expired entry lands for the next
+      // open. Never awaited: the caller already has its rows, and `refresh()`
+      // degrades instead of throwing, so nothing can escape unhandled.
+      void this.gatewayFacts.refresh(connection).catch(() => undefined)
+    }
     const toInfo = (model: (typeof catalog)[number]) => {
       const vision = KNOWN_IMAGE_MODELS.has(model.id)
       return {

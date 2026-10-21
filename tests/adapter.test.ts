@@ -5887,6 +5887,43 @@ test('listModels() parses the catalog and marks input as text-only', async () =>
   assert.deepEqual(models[0]!.inputModalities, ['text'])
 })
 
+test('listModels() 目录已在内存时不再等一次联网刷新', async (t) => {
+  // 选择器与设置页的过滤编辑器都只是把目录画出来：本进程手里已经有这些行时，
+  // 还让这次打开等一次刷新，纯粹是延迟 —— 行刚刚还是好的，刷新留给下次打开。
+  // 进程首次加载则必须照旧等联网，否则没有诚实的行可画。
+  const originalNow = Date.now
+  let now = originalNow()
+  Date.now = () => now
+  t.after(() => { Date.now = originalNow })
+  let refreshes = 0
+  let parked = false
+  const catalog = (id: string) => new Response(JSON.stringify({
+    object: 'list', data: [{ id, name: id, context_length: 1000, max_output_tokens: 500 }],
+  }))
+  const adapter = makeAdapter({
+    fetchImpl: (async (input: RequestInfo | URL) => {
+      if (!String(input).endsWith('/models')) return catalog('unexpected')
+      refreshes++
+      if (!parked) return catalog(`model-${refreshes}`)
+      // 后台刷新明显晚一步：若本次调用蠢到去等它，拿到的就是新行而不是旧行，
+      // 断言会直接失败，而不是靠超时。
+      await new Promise<void>((resolve) => setTimeout(resolve, 50))
+      return catalog(`model-${refreshes}`)
+    }) as typeof fetch,
+  })
+  // 冷进程：没有可画的行，必须等这一次联网。
+  assert.equal((await adapter.listModels('commandcode', { unfiltered: true }))[0]?.id, 'model-1')
+  assert.equal(refreshes, 1)
+  // 目录仍在有效期内：这次调用不产生任何刷新。
+  assert.equal((await adapter.listModels('commandcode', { unfiltered: true }))[0]?.id, 'model-1')
+  assert.equal(refreshes, 1)
+  // 目录过期，且网关此刻不再回包：本次打开必须拿着旧行立刻返回，刷新挂在后台。
+  now += 5 * 60_000 + 1
+  parked = true
+  const listed = await adapter.listModels('commandcode', { unfiltered: true })
+  assert.equal(listed[0]?.id, 'model-1', '过期目录也先画出来，不能等后台刷新')
+  assert.equal(refreshes, 2, '后台仍要发起刷新，好让下次打开拿到新行')
+})
 test('listModels() falls back to the on-disk cache when the fetch fails', async () => {
   const cachePath = `/tmp/cc-test-cache-${process.pid}.json`
   const { writeFileSync, rmSync } = await import('node:fs')

@@ -116,6 +116,19 @@ export class GatewayFacts {
     const row = this.forSource(source).rows.find(candidate => candidate.id === model)
     return row === undefined ? undefined : copyRows([row])[0]
   }
+  /**
+   * 本进程已经加载过的目录；从未加载过时返回 undefined。
+   *
+   * 与 {@link snapshot} 的区别是它绝不读磁盘：调用方要区分「有已知行可以先画」与
+   * 「只有一份可能过期的磁盘副本」。磁盘缓存没有年龄校验，用它给选择器当首屏会让
+   * 冷启动显示一份不知道多久以前的目录；而内存里的行要么刚联网取回，要么是同一
+   * 进程里刚刚成功刷新过的结果，可以安全地先画、再后台更新。
+   */
+  loaded(source: GatewaySource): CommandCodeModel[] | undefined {
+    const state = this.forSource(source)
+    if (state.rows.length === 0 && state.expiresAt === 0) return undefined
+    return copyRows(state.rows)
+  }
   /** 生成只读取本地目录；捕获状态后不再转向实例的新来源。 */
   async snapshot(source: GatewaySource): Promise<CommandCodeModel[]> {
     const state = this.forSource(source)
