@@ -220,8 +220,13 @@ function fingerprintValue(value: unknown): ValueFingerprint {
   }
   return {
     bytes: Buffer.byteLength(serialized),
-    sha256: createHash('sha256').update(serialized).digest('hex'),
+    sha256: sha256Hex(serialized),
   }
+}
+
+/** Digest of already-serialized text: no second stringify, no retained copy. */
+function sha256Hex(serialized: string): string {
+  return createHash('sha256').update(serialized).digest('hex')
 }
 
 /**
@@ -2404,11 +2409,23 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     body: Record<string, unknown>,
     timeoutMs: number,
     sessionId: string | undefined,
+    sent?: string,
   ): unknown {
     const timedOut = error instanceof LlmError && error.code === 'TIMEOUT'
     if (!timedOut) return error
     const key = sessionId ?? GLOBAL_HEADER_TIMEOUT_KEY
-    const fingerprint = `${protocol}:${fingerprintValue(body).sha256}`
+    // The streak asks one question — "is this the SAME payload that just timed
+    // out?" — and the string that went on the wire answers it exactly, byte for
+    // byte. Re-stringifying `body` here would re-walk the entire request (MBs,
+    // on a history carrying images) just to render a second opinion on a body
+    // the caller already serialized, and it would answer about slightly
+    // DIFFERENT bytes whenever the surrogate sanitizer had removed something.
+    // `sent` is absent only when no serialized copy exists — a body that never
+    // reached the wire, or a failure before serialization — and there the
+    // object hash is the honest fallback.
+    const fingerprint = `${protocol}:${sent === undefined
+      ? fingerprintValue(body).sha256
+      : sha256Hex(sent)}`
     const previous = this.headerTimeoutStreaks.get(key)
     const count = previous?.fingerprint === fingerprint ? previous.count + 1 : 1
     if (previous === undefined) {
@@ -3573,7 +3590,10 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
       trace.close()
       if (options.signal?.aborted) throw error
       throw failureWithRequestId(
-        this.gradeHeaderTimeout(error, protocol, body, connection.requestTimeoutMs, options.sessionId),
+        this.gradeHeaderTimeout(
+          error, protocol, body, connection.requestTimeoutMs, options.sessionId,
+          serializedBodies.get(body),
+        ),
         responseMetadata,
       )
     }

@@ -8071,6 +8071,43 @@ test('concurrent sessions keep independent header-timeout streaks', async () => 
   assert.equal(sessionBSecond.code, 'TIMEOUT', 'session-b is unaffected by session-a escalating, and is only on its 2nd timeout')
 })
 
+test('超时定级复用已序列化的正文，不再为算指纹重新遍历一遍', async () => {
+  // 指纹只回答「这是不是刚刚超时的同一份载荷」，而实发字符串就是逐字节准确的
+  // 答案。正文已经序列化过一次，超时判定不该为了算第二个意见再走一遍整棵 body
+  // ——带图历史可达数 MB，而超时恰恰是最常重复的路径。
+  //
+  // `toJSON` 在这里既计数又保持字节不变：同一个值被遍历几次，线缆字节都相同，
+  // 所以升级行为必须与从前一致；变化的只有遍历次数。
+  let passes = 0
+  const constant = { toJSON: () => { passes++; return { value: 1 } } }
+  const adapter = makeAdapter({
+    options: () => ({
+      apiBase: 'https://api.commandcode.ai', workingDir: '/tmp/project',
+      modelsCachePath: '/tmp/cc-models-cache.json',
+      requestTimeoutMs: 30, streamIdleTimeoutMs: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+      protocol: 'openai' as const,
+    }),
+    fetchImpl: neverSettlingFetch(),
+  })
+  const failure = async () => {
+    try {
+      for await (const _ of adapter.stream({
+        provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash',
+        messages: [userMessage('hi')],
+        tools: [{ name: 'tool', description: 't', parameters: { type: 'object', properties: { constant } } }],
+      })) { /* drain */ }
+    } catch (error) {
+      const coded = error as { code?: string }
+      return String(coded.code)
+    }
+    throw new Error('expected the generate to fail')
+  }
+  assert.equal(await failure(), 'TIMEOUT')
+  assert.equal(passes, 1, '一次超时只应遍历一次正文')
+  assert.equal(await failure(), 'TIMEOUT')
+  assert.equal(await failure(), 'PROVIDER_HTTP_ERROR', '字节相同就必须升级，遍历次数不该改变语义')
+  assert.equal(passes, 3, '每次调用只序列化一次，超时定级复用那一份')
+})
 test('a session-less call keeps the old single-slot streak so it still escalates', async () => {
   // openai protocol, not cli: the CLI body embeds a threadId that falls back
   // to a fresh randomUUID() per call with no sessionId (cliThreadId()), which
