@@ -182,6 +182,16 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
       a session that is not oversized — at full price, on a long context — and be refused identically. The
       same ordering applies inside `streamErrorToLlmError()`, which is the path when the refusal arrives in
       a 200 body rather than as a status; issue #71 reported it in exactly that shape.
+    - A gateway JSON-node cap (`400 JSON node count cannot exceed 32768`, issue #96) is a STRUCTURAL limit,
+      not a token one. `JSON_NODE_LIMIT_REJECTION` claims it after the overflow branch and returns a
+      bilingual `PROVIDER_HTTP_ERROR` naming the limit the gateway stated. A session heavy in messages,
+      tool calls and images trips it well inside the window — reported at 22.6% of a 1M-token model with
+      1,436 messages and 61 image parts — so the wording says the cap is on the request's structure, not
+      its token length, and that compacting usually will not be enough (not useless: compaction shrinks
+      the message and part count, just not reliably below the cap). The code stays permanent: resending
+      the same structure cannot succeed, and the advice is a new session or fewer messages/images. Only
+      the stated number is quoted; the rest of the upstream sentence stays unshown under the display
+      rule at the bottom of `generateHttpError()`.
     - **An output-ceiling refusal is retried once, at the ceiling the endpoint names.** `streamRequest()`
       wraps `streamAttempt()` and, on failure before the first chunk reaches the host, reads Y out of
       `max_tokens: X > Y`, records it in `learnedOutputLimits` and re-sends. Both refusal shapes are covered

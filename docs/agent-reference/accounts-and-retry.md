@@ -90,10 +90,17 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   reporter its window was exhausted while the account card showed 5-hour 2% and weekly 10%. `markRejected()`
   ignores a reset on a throttle mark on purpose, keeping it `unknown` so a probe can still discover a real
   window limit behind it (and upgrade the mark's `cause` to `window` when it does). `invalid-credential`
-  (401, marked) and `unavailable` (no credits, or a model outside this account's plan — rotated past but
-  deliberately NOT marked, because the fact is about the model or the balance rather than the key, either
-  can change without the key changing, and a `:free` model is still served by a credits-empty account)
-  complete the four. The whole `tried` set rides the hook so one request can walk a four-account pool, and a
+  (401, marked) and `unavailable` (no credits, or a model outside this account's plan) complete the four.
+  `unavailable` never becomes an ACCOUNT mark: the fact is about the model or the balance rather than the
+  key, either can change without the key changing, and a `:free` model is still served by a credits-empty
+  account. It DOES become a model-scoped, five-minute PREFERENCE demotion (`markModelUnavailable()` →
+  `modelUnavailable`, keyed `key\0model`): the same model skips that account, every other model and every
+  `:free` model keep serving it, a pool whose every candidate carries the mark falls back to the full
+  candidate list instead of reporting exhaustion, and a 401 clears that key's marks. Without it every later
+  request re-hit the same `400 insufficient credits` first — one wasted round trip per step and, when that
+  account was the fallback, an error naming an account the user never chose (issue #51's remaining half,
+  live-probed 2026-10-21: a $0.0874 balance rejected every paid model while `stealth/glyph-cluster:free`
+  still answered 200). The whole `tried` set rides the hook so one request can walk a four-account pool, and a
   pool that cannot serve answers with its own all-exhausted diagnosis (earliest reset + the retry wait)
   rather than the last raw rejection — but only when every account it could consider is MARKED. An account
   that was tried and left UNMARKED always wins instead: `resolveKey()` returns undefined so the caller's own

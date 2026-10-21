@@ -987,3 +987,63 @@ test('a padded auth-file key is normalized too', async () => {
   const resolved = await pool.resolveKey()
   assert.equal(resolved?.key, 'file-key')
 })
+
+// ---------------------------------------------------------------------------
+// Model-scoped unavailability (issue #51's remaining half)
+//
+// 现场实测（2026-10-21）：账户余额 $0.0874、两个窗口都正常时，所有付费模型
+// 返回 400 BAD_REQUEST / "insufficient credits"，免费模型仍 200。该拒绝被
+// classifyAccountRejection 归为 `unavailable`，而 host 有意不为它落永久标记
+// （余额为空的账号仍要能跑免费模型），于是每一次新请求都会重新选中这个账号、
+// 再吃一次 400；多账号池里最终会把「另一个账号的余额不足」当成用户看到的
+// 失败原因，正对应反馈者的「选了还有额度的账号却被切到没余额账号」。
+//
+// 期望行为：`unavailable` 按「密钥 + 模型」记一条带时限的软标记，只影响
+// 选择顺序（降级而非禁用）——同一模型的后续请求先跳过它，其它模型与免费
+// 模型不受影响，且当它是唯一候选时仍然交出去。
+// ---------------------------------------------------------------------------
+
+test('an unavailable rejection is remembered per model: the next request skips that account', async () => {
+  const { pool, probeCalls } = makePool({ ...TWO_ACCOUNTS })
+  const model = 'claude-opus-5'
+  assert.equal((await pool.resolveKey({ model }))?.key, 'key-1', '第一次请求取第一个账号')
+  pool.markModelUnavailable('key-1', model)
+  assert.equal((await pool.resolveKey({ model }))?.key, 'key-2', '同一模型的下一次请求不再重撞余额不足的账号')
+  assert.deepEqual(probeCalls, [], '软标记不应触发额度探测')
+})
+
+test('the model-scoped mark leaves other models alone', async () => {
+  const { pool } = makePool({ ...TWO_ACCOUNTS })
+  pool.markModelUnavailable('key-1', 'claude-opus-5')
+  // 余额为空的账号仍能服务免费模型 —— 这是 host 不为 unavailable 落永久
+  // 标记的理由，软标记必须保留它。
+  assert.equal((await pool.resolveKey({ model: 'stealth/glyph-cluster:free' }))?.key, 'key-1')
+  assert.equal((await pool.resolveKey({ model: 'claude-opus-5' }))?.key, 'key-2')
+})
+
+test('a model-scoped mark on the only account still serves it instead of claiming exhaustion', async () => {
+  const { pool } = makePool({ slots: [defaultSlot()], keys: { COMMANDCODE_API_KEY: 'key-1' } })
+  pool.markModelUnavailable('key-1', 'claude-opus-5')
+  // 降级而非禁用：没有别的账号时，它仍是唯一诚实的答案，不能变成
+  // 「所有账号都不可用」的诊断或抛错。
+  assert.equal((await pool.resolveKey({ model: 'claude-opus-5' }))?.key, 'key-1')
+})
+
+test('a model-scoped mark is a preference, not a ban', async () => {
+  const { pool } = makePool({ ...TWO_ACCOUNTS })
+  pool.markRejected('key-2', 'invalid-credential')
+  pool.markModelUnavailable('key-1', 'claude-opus-5')
+  // key-1 被软标记、key-2 被 401 禁用 —— 仍然交回 key-1，而不是报全池不可用。
+  assert.equal((await pool.resolveKey({ model: 'claude-opus-5' }))?.key, 'key-1')
+})
+
+test('the model-scoped mark expires by the clock', async () => {
+  let now = 1_000_000
+  const { pool } = makePool({ ...TWO_ACCOUNTS, now: () => now })
+  const model = 'claude-opus-5'
+  pool.markModelUnavailable('key-1', model)
+  assert.equal((await pool.resolveKey({ model }))?.key, 'key-2')
+  // 假定 TTL 为 5 分钟：6 分钟后首选顺序恢复。
+  now += 6 * 60_000
+  assert.equal((await pool.resolveKey({ model }))?.key, 'key-1')
+})

@@ -156,6 +156,28 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   merge would fail once a peer ships it). On dsh builds without the slot the
   declaration never exists and `slots.inject` never fires — the registration
   silently does not happen; do not "harden" that into an error.
+- **Service status row (`settings.section` → Integrations & display)**
+  (`src/client/service-status.ts`): reads the two public files the official
+  status page (status.commandcode.ai, an Upptime deployment) itself reads —
+  `history/summary.json` for the verdict plus 7/30-day uptime and 7-day average
+  response time, and `history/command-code.yml` for the monitor's own
+  `lastUpdated`. `raw.githubusercontent.com` is tried first, jsDelivr second
+  (same files, longer `@master` cache); both serve `access-control-allow-origin:
+  *`, so the plain browser fetch works with no Host proxy, like `./update.ts`'s
+  registry check. The snapshot is cached in `localStorage` for five minutes;
+  every failure keeps the last good snapshot marked `stale` and paints it with a
+  "last known result" notice, while a cold cache degrades to "status unknown".
+  `checkServiceStatus` never throws and the row writes no setting, so a network
+  failure cannot block Save. The dot reuses the framework's `StateDot`
+  (done/warning/error/idle) instead of a local colour token, and all copy rides
+  the `settings.commandcode` namespace (zh is the source of truth).
+  **Deliberate limits**: the monitor probes only `https://api.commandcode.ai`'s
+  root (HTTP 200), so "operational" does not prove inference works; GitHub
+  throttles the five-minute Actions cron (observed gaps of two to six hours) and
+  `summary.json` is regenerated only once a day, so the row always shows "last
+  checked N ago" and never claims to be real time. Past incidents are GitHub
+  issues, not data files, and are left to the page itself (the row links to it).
+  Pinned by `tests/service-status.test.ts`.
 - **Browser login (`commandcode/loginBegin|loginStatus|loginCancel`)**: the
   settings page's key field can start the official `command-code login` flow
   instead of pasting a key — reverse-engineered from the CLI bundle's

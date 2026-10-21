@@ -191,6 +191,20 @@ export const PAGE_CSS = `
 .cc-addGlyph::before,.cc-addGlyph::after{content:'';position:absolute;background:currentColor;border-radius:1px}
 .cc-addGlyph::before{left:0;right:0;top:5.25px;height:1.5px}
 .cc-addGlyph::after{top:0;bottom:0;left:5.25px;width:1.5px}
+/* Secondary exit under the primary "Add account" action. It keeps that
+   button's 16px radius and full row width so the two form one stack, but the
+   treatment is lighter — a hairline edge, 40px instead of 44px, 12px copy and
+   an icon/arrow pair — so it never competes with adding an account. Colours
+   are theme aliases only: brand-primary inverts between the modes, and the
+   copy is clamped with an ellipsis because the label is a full sentence. */
+.cc-usageEntry{box-sizing:border-box;align-items:center;gap:8px;display:flex;width:100%;height:40px;padding:0 14px;margin-top:8px;border:.5px solid var(--dsw-alias-border-l4);border-radius:16px;background:0 0;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:18px;text-align:left;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease}
+.cc-usageEntry:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l3);color:var(--dsw-alias-label-primary)}
+.cc-usageEntry:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
+.cc-usageEntryIcon{flex:none;width:16px;height:16px;color:var(--dsw-alias-label-tertiary)}
+.cc-usageEntry:hover .cc-usageEntryIcon{color:var(--dsw-alias-label-secondary)}
+.cc-usageEntryText{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cc-usageEntryArrow{flex:none;width:12px;height:12px;color:var(--dsw-alias-label-tertiary)}
+.cc-usageEntry:hover .cc-usageEntryArrow{color:var(--dsw-alias-label-secondary)}
 .cc-addPanel{flex-direction:column;gap:12px;display:flex;padding:14px 16px;border-radius:12px;background:var(--dsw-alias-bg-module-platform)}
 .cc-panelTitle{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px}
 .cc-accountReport{flex-direction:column;gap:14px;display:flex}
@@ -237,6 +251,14 @@ export const PAGE_CSS = `
 .cc-failed{display:inline-block;max-width:260px;min-width:0;color:var(--dsw-alias-state-error-primary);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px}
 .cc-loginLink{color:var(--dsw-alias-link,var(--dsw-alias-brand-primary));text-decoration:none;font-size:12px;line-height:18px}
 .cc-loginLink:hover{text-decoration:underline;text-underline-position:under}
+/* The status row's dot + verdict sit beside the row title; the primitive's own
+ * state tokens colour the dot, so only the neutral label and the failure note
+ * need styling here. */
+.cc-statusBadge{align-items:center;gap:6px;display:inline-flex;white-space:nowrap}
+.cc-statusLabel{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.cc-statusNotice{color:var(--dsw-alias-state-warn-label,var(--dsw-alias-label-tertiary));margin:0;font-size:12px;line-height:18px}
+.cc-statusLink{color:var(--dsw-alias-link,var(--dsw-alias-brand-primary));text-decoration:none;font-size:12px;line-height:18px;white-space:nowrap}
+.cc-statusLink:hover{text-decoration:underline;text-underline-position:under}
 .cc-loginDone{color:var(--dsw-alias-state-success-primary,var(--dsw-alias-label-secondary))}
 .cc-loginError{color:var(--dsw-alias-state-error-primary)}
 /* The floating save bar: a centered capsule pinned to the bottom of the

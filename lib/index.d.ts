@@ -798,6 +798,11 @@ declare class CommandCodeAccountPool {
   private states;
   /** 当前网关与密钥的显式探测时间，限制失败探测的频率。 */
   private explicitProbes;
+  /**
+   * 模型级 `unavailable` 软标记：`key\0model` → 过期时刻（毫秒）。
+   * 只影响选择顺序，从不参与 {@link accountUsable}，所以免费模型仍可用。
+   */
+  private modelUnavailable;
   private scopedStates;
   constructor(deps: CommandCodeAccountPoolDeps);
   /** 每个调用持有自己的定义和探测，只有同网关的健康事实共享；不临时改写全局依赖。 */
@@ -874,6 +879,30 @@ declare class CommandCodeAccountPool {
    * keeps its window unknown on purpose, so a probe can still find out.
    */
   markRejected(apiKey: string, rejection: AccountRejection, resetAtMs?: number): void;
+  /**
+   * Record a model-scoped `unavailable` rejection (no credits, or a model
+   * outside this account's plan) as a SHORT-LIVED PREFERENCE demotion.
+   *
+   * 职责：让同一模型的后续请求先跳过这个账号，而不是每一步都重撞一次
+   * `400 insufficient credits`；同时刻意不写进 `states`，所以
+   * {@link accountUsable} 与 {@link activeAccount} 都不受影响——余额为空的
+   * 账号仍然能服务 `:free` 模型，账号卡片也不会把它标成"不可用"。
+   *
+   * 为什么按时限而非永久：余额/套餐是可以不换密钥就改变的事实（充值、升级），
+   * 而进程内没有任何事件能通知这改变，所以只能靠时钟自行恢复。
+   */
+  markModelUnavailable(apiKey: string, model: string): void;
+  /** Drop every model-scoped mark for one key (a new credential invalidates them). */
+  private clearModelUnavailable;
+  /**
+   * The candidates for THIS model, in preference order: accounts without a live
+   * model-scoped mark first, everything else after them.
+   *
+   * 为什么要"排后"而不是"剔除"：软标记只是偏好（见
+   * {@link markModelUnavailable}）。全部候选都被标记时必须退回全量，否则唯一
+   * 账号的池子会变成"没有可用账号"，把一次余额不足误报成额度耗尽。
+   */
+  private withoutModelUnavailable;
   /**
    * One account's key: literal → credential seam → auth file (default slot).
    *

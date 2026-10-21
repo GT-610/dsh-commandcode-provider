@@ -27,8 +27,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Button, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Menu, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MenuEntry, StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CommandCodeCredits } from '../adapter.ts'
 import type { CommandCodeAccountUsage, CommandCodeUsageReport } from '../usage-wire.ts'
@@ -43,6 +43,14 @@ import { usageCardState } from './usage.ts'
 import { compactCountTitle, formatCompactCount, formatMoney, formatMoneyExact, formatResetAt, formatSuccessRate, formatTokensCompact, windowRatio, formatUsageBillingPeriod } from '../display-format.ts'
 import { PLUGIN_RELEASES_URL, PLUGIN_VERSION } from './version.ts'
 import { checkForUpdate, localStorageUpdateStore } from './update.ts'
+import {
+  STATUS_PAGE_URL,
+  checkServiceStatus,
+  localStorageServiceStatusStore,
+  readCachedServiceStatus,
+  serviceStatusView,
+} from './service-status.ts'
+import type { ServiceStatusSnapshot } from './service-status.ts'
 
 /** Props composed by the slot registration: locale seat + injected face. */
 export interface CommandCodeSettingsProps {
@@ -1000,10 +1008,55 @@ function PrivacyCard({ state, disabled, t, onEdit, onReset }: FormCardProps) {
   )
 }
 
+/**
+ * The service-status row: the official status page's public probe data, read
+ * through ./service-status.ts (source order, cache TTL and every degradation
+ * rule live there). It is display-only — it writes no setting and never blocks
+ * Save; the link opens the page for the full history and incidents.
+ */
+function ServiceStatusRow({ t }: { t: Translate<SettingsCommandCodeKey> }) {
+  const snapshot = useServiceStatus()
+  const view = serviceStatusView(snapshot, t, Date.now())
+  // The primitive's five states already carry the theme's success/warn/error
+  // tokens, so the row inherits the design system's status colours instead of
+  // hardcoding ours.
+  const dot: StateDotState = view.checking ? 'ongoing'
+    : view.level === 'up' ? 'done'
+      : view.level === 'degraded' ? 'warning'
+        : view.level === 'down' ? 'error'
+          : 'idle'
+  return (
+    <SettingRow
+      title={t('serviceStatusTitle')}
+      tag={
+        <span className="cc-statusBadge" title={view.hint}>
+          <StateDot state={dot} />
+          <span className="cc-statusLabel">{view.label}</span>
+        </span>
+      }
+      description={
+        <>
+          {view.detail !== undefined ? <p>{view.detail}</p> : null}
+          {view.meta !== undefined ? <p>{view.meta}</p> : null}
+          {view.notice !== undefined ? <p className="cc-statusNotice">{view.notice}</p> : null}
+        </>
+      }
+      control={
+        <a className="cc-statusLink" href={STATUS_PAGE_URL} target="_blank" rel="noreferrer">
+          {view.linkLabel}
+        </a>
+      }
+    />
+  )
+}
+
 /** Integrations & display: surfaces outside chat that reuse this provider. */
 function IntegrationsCard({ state, disabled, t, onEdit, onReset }: FormCardProps) {
   return (
     <SettingsGroup title={t('integrationsTitle')} divided>
+      {/* Status first: it is the row a user opens this page to check when
+          requests start failing, before the two opt-in display switches. */}
+      <ServiceStatusRow t={t} />
       <ToggleField
         id="cc-web-search"
         label={t('webSearch')}
@@ -1665,6 +1718,30 @@ function AddAccountPanel({ state, disabled, t, enrollment, snapshot, onClose }: 
 }
 
 /**
+ * The analytics entry's chart mark: a linear, single-colour SVG (the UI rules
+ * forbid glyph icons), sized to the 16px slot the row reserves.
+ */
+function UsageEntryChart() {
+  return (
+    <svg className="cc-usageEntryIcon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 13.5h11" />
+      <path d="M4.5 13.5V8.5" />
+      <path d="M8 13.5V4.5" />
+      <path d="M11.5 13.5V6.5" />
+    </svg>
+  )
+}
+
+/** The row's trailing affordance; inherits its colour from the button state. */
+function UsageEntryArrow() {
+  return (
+    <svg className="cc-usageEntryArrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 3.5 10.5 8 6 12.5" />
+    </svg>
+  )
+}
+
+/**
  * The unified account card: every account the pool rotates through, one row
  * each, with its status and quota inline — so one account's facts no longer
  * have to be cross-read across separate surfaces.
@@ -1700,10 +1777,6 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
       <div className="cc-groupHead">
         <h3 className="cc-groupTitle">{t('accountsTitle')}</h3>
         <span className="cc-spacer" />
-        {/* The analytics entry lives with the usage heading rather than in the
-            page intro: it is another way to read the same usage/cost data this
-            card summarises, and the Host may expose no panel seam at all. */}
-        {openAnalytics ? <Button variant="ghost" size="sm" onClick={openAnalytics}>{t('openAnalytics')}</Button> : null}
         <button type="button" className="cc-linkButton" disabled={loading} onClick={() => { onRefresh(); void enrollment.refresh() }}>
           {loading ? t('usageRefreshing') : t('usageRefresh')}
         </button>
@@ -1784,6 +1857,17 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
           {t('accountAdd')}
         </button>
       )}
+      {/* Secondary exit, not a heading action: the 14-character label used to
+          crowd the group title on a narrow panel, so the entry now sits under
+          the card's primary action with its own row-shaped treatment. The Host
+          may expose no panel seam at all, hence the optional render. */}
+      {openAnalytics ? (
+        <button type="button" className="cc-usageEntry" onClick={openAnalytics}>
+          <UsageEntryChart />
+          <span className="cc-usageEntryText">{t('openAnalytics')}</span>
+          <UsageEntryArrow />
+        </button>
+      ) : null}
     </section>
   )
 }
@@ -1833,6 +1917,30 @@ function usePluginUpdate(): string | undefined {
     }
   }, [])
   return available
+}
+
+/**
+ * The service status: paint the cached snapshot immediately, then run one
+ * throttled check per page open (the TTL and every failure path live in
+ * ./service-status.ts, which never rejects). The probe is public data, so it
+ * needs neither the Host nor a key.
+ */
+function useServiceStatus(): ServiceStatusSnapshot | undefined {
+  const [snapshot, setSnapshot] = useState<ServiceStatusSnapshot | undefined>(
+    () => readCachedServiceStatus(localStorageServiceStatusStore()),
+  )
+  useEffect(() => {
+    let cancelled = false
+    void checkServiceStatus({ store: localStorageServiceStatusStore() }).then((next) => {
+      if (!cancelled) setSnapshot(next)
+      // A rejection here would be a bug — checkServiceStatus catches every
+      // source failure — but the settings page must never break on a probe.
+    }, () => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  return snapshot
 }
 
 type SaveBarTone = 'pending' | 'error' | 'success'

@@ -221,6 +221,25 @@ export type SettingsCommandCodeKey =
   | 'modelsInvalid'
   | 'privacyTitle'
   | 'integrationsTitle'
+  // 服务状态行：官方状态页的公开探测数据，见 `./service-status.ts`。
+  | 'serviceStatusTitle'
+  | 'serviceStatusHint'
+  | 'serviceStatusChecking'
+  | 'serviceStatusUp'
+  | 'serviceStatusDegraded'
+  | 'serviceStatusDown'
+  | 'serviceStatusUnknown'
+  | 'serviceStatusUptimeWeek'
+  | 'serviceStatusUptimeMonth'
+  | 'serviceStatusResponseWeek'
+  | 'serviceStatusCheckedJustNow'
+  | 'serviceStatusCheckedMinutes'
+  | 'serviceStatusCheckedHours'
+  | 'serviceStatusCheckedDays'
+  | 'serviceStatusCheckedUnknown'
+  | 'serviceStatusStale'
+  | 'serviceStatusUnavailable'
+  | 'serviceStatusOpen'
   // 账号开通状态的语义键：宿主与浏览器侧控制器共同产出，见 `EnrollmentMessageKey`。
   | EnrollmentMessageKey
 
@@ -228,7 +247,7 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   openAnalytics: '查看模型用量、成本与性能分析',
   nav: 'Command Code',
   title: 'Command Code',
-  intro: '账户操作立即生效；其余设置修改后点击底部「保存」。API 密钥仅保存在本机凭据服务中，不会回显。',
+  intro: '账户操作立即生效；其余改动点底部「保存」。密钥仅存于本机凭据服务，不回显。',
   apiKey: 'API 密钥',
   apiKeyHint: '在 commandcode.ai 控制台创建。留空保存不会覆盖已存储的密钥。',
   apiKeySet: '已配置',
@@ -434,6 +453,24 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   modelsInvalid: '模型与上下文中有未填好的数字，请展开修正后再保存。',
   privacyTitle: '隐私与安全',
   integrationsTitle: '集成与显示',
+  serviceStatusTitle: '服务状态',
+  serviceStatusHint: '数据来自官方状态页的公开探测记录，由 GitHub Actions 定时检测，可能滞后数小时。',
+  serviceStatusChecking: '正在检查…',
+  serviceStatusUp: '服务正常',
+  serviceStatusDegraded: '部分降级',
+  serviceStatusDown: '服务中断',
+  serviceStatusUnknown: '状态未知',
+  serviceStatusUptimeWeek: '7 天可用率 {value}',
+  serviceStatusUptimeMonth: '30 天可用率 {value}',
+  serviceStatusResponseWeek: '近 7 天平均响应 {value}',
+  serviceStatusCheckedJustNow: '刚刚检测',
+  serviceStatusCheckedMinutes: '最后检测：{count} 分钟前',
+  serviceStatusCheckedHours: '最后检测：{count} 小时前',
+  serviceStatusCheckedDays: '最后检测：{count} 天前',
+  serviceStatusCheckedUnknown: '最后检测时间未知',
+  serviceStatusStale: '无法获取状态数据，以下为上次成功获取的结果。',
+  serviceStatusUnavailable: '无法获取状态数据。',
+  serviceStatusOpen: '打开状态页',
   enrollmentCreating: '正在创建账号',
   enrollmentWaiting: '等待浏览器登录',
   enrollmentWriting: '正在保存凭据',
@@ -462,7 +499,7 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   openAnalytics: 'View model usage, cost and performance',
   nav: 'Command Code',
   title: 'Command Code',
-  intro: 'Account actions apply immediately; other settings are written by Save at the bottom. The API key stays in the local credential service and is never echoed.',
+  intro: 'Account actions apply immediately; other changes need Save below. The key stays in the local credential service and is never echoed.',
   apiKey: 'API key',
   apiKeyHint: 'Create one in the commandcode.ai console. Saving with this field'
     + ' blank keeps the stored key.',
@@ -678,6 +715,24 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   modelsInvalid: 'A number in Models & context is not ready to save; expand to fix it.',
   privacyTitle: 'Privacy & security',
   integrationsTitle: 'Integrations & display',
+  serviceStatusTitle: 'Service status',
+  serviceStatusHint: 'Public probe data from the official status page (GitHub Actions checks; may lag by hours).',
+  serviceStatusChecking: 'Checking…',
+  serviceStatusUp: 'Operational',
+  serviceStatusDegraded: 'Degraded performance',
+  serviceStatusDown: 'Service outage',
+  serviceStatusUnknown: 'Status unknown',
+  serviceStatusUptimeWeek: '7-day uptime {value}',
+  serviceStatusUptimeMonth: '30-day uptime {value}',
+  serviceStatusResponseWeek: '7-day avg response {value}',
+  serviceStatusCheckedJustNow: 'Checked just now',
+  serviceStatusCheckedMinutes: 'Last checked {count} min ago',
+  serviceStatusCheckedHours: 'Last checked {count} h ago',
+  serviceStatusCheckedDays: 'Last checked {count} d ago',
+  serviceStatusCheckedUnknown: 'Last check time unknown',
+  serviceStatusStale: 'Status data unavailable; showing the last known result.',
+  serviceStatusUnavailable: 'Status data unavailable.',
+  serviceStatusOpen: 'Open status page',
   enrollmentCreating: 'Creating the account',
   enrollmentWaiting: 'Waiting for the browser sign-in',
   enrollmentWriting: 'Saving the credential',

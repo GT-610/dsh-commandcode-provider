@@ -587,14 +587,24 @@ export function apply(ctx: Context, config: Config): void {
       model?: string,
       rotation?: { tried: readonly string[]; resetAtMs?: number },
     ): Promise<string | undefined> => {
-      // Only the two account-health reasons become marks: an `unavailable`
-      // rejection (no credits, a model outside this account's plan) says
-      // nothing durable about the key — a `:free` model is still served by a
-      // credits-empty account. `rate-limit` and `throttled` both mark but with
-      // different causes, so the pool's own diagnosis never reports a plain
-      // throttle as an exhausted usage window (issue #54).
+      // Only the two account-health reasons become account marks: an
+      // `unavailable` rejection (no credits, a model outside this account's
+      // plan) says nothing durable about the KEY — a `:free` model is still
+      // served by a credits-empty account. It does say something about this
+      // account ON THIS MODEL, though, and forgetting that made every later
+      // request pick the same doomed account first (issue #51's remaining
+      // half). It therefore lands as a model-scoped, short-lived PREFERENCE
+      // demotion: the same model skips the account for a few minutes, while
+      // other models and `:free` models keep serving it. `rate-limit` and
+      // `throttled` both mark but with different causes, so the pool's own
+      // diagnosis never reports a plain throttle as an exhausted usage window
+      // (issue #54).
       const accounts = scopedPool(connection)
-      if (rejection !== 'unavailable') accounts.markRejected(rejectedKey, rejection, rotation?.resetAtMs)
+      if (rejection !== 'unavailable') {
+        accounts.markRejected(rejectedKey, rejection, rotation?.resetAtMs)
+      } else if (model !== undefined) {
+        accounts.markModelUnavailable(rejectedKey, model)
+      }
       // The whole tried set, not just the rejected key, reaches the pool: a
       // rejection that does not mark the key would otherwise be re-offered on
       // every attempt and a four-account pool could never reach the accounts

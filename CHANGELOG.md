@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **设置页新增「服务状态」行**（「集成与显示」分组第一行）：读取官方状态页（`status.commandcode.ai`，Upptime 部署）自己在用的两个公开文件——`history/summary.json`（服务状态、7/30 天可用率、近 7 天平均响应）与 `history/command-code.yml`（监控端最后检测时间），显示状态圆点、中文状态文案与「打开状态页」链接。数据源先试 `raw.githubusercontent.com`、失败回退 jsDelivr；`localStorage` 缓存 5 分钟，获取失败时保留上次成功结果并标注「上次结果」，无缓存则显示「状态未知」；`checkServiceStatus` 不抛异常、不写配置、不阻塞保存。颜色复用框架 `StateDot`（done / warning / error / idle），不新增颜色令牌。**已知边界**：官方只探测 `https://api.commandcode.ai` 根路径 200，不代表推理链路一定可用；GitHub Actions 调度会被节流（实测 2~6 小时）且 `summary.json` 每日才汇总一次，因此行内始终显示「最后检测 X 前」，不宣称实时；最近事件来自 GitHub Issues，本行不展示，仍以状态页为准。用例：`tests/service-status.test.ts`（16 条，含源回退、缓存 TTL、陈旧降级与文案分支）。
+
+### Changed
+
+- **设置页顶部说明段压缩到单行**（中文 48 → 38 个字符，视觉宽估算 640 → 532px；英文 156 → 132 个字符）。`账户操作立即生效；其余设置修改后点击底部「保存」。API 密钥仅保存在本机凭据服务中，不会回显。` → `账户操作立即生效；其余改动点底部「保存」。密钥仅存于本机凭据服务，不回显。`：删去「设置修改后」「点击」「API」「保存在…中」「会」等虚词，三条信息（账户操作即时生效／其余改动走底部「保存」／密钥只存本机凭据服务且不回显）逐条保留；14px 字号下折算宽度由约 640px 降到 532px，常规设置面板一行放得下。**已知取舍**：英文信息密度低，132 字符折算约 880px，在 `max-width:720px` 的 `.cc-section`（设置页容器）里仍会折行；同页 `accountsHint` 写「无需保存」，与本段「其余改动点底部「保存」」措辞不完全统一。**验证边界**：未做真实浏览器渲染截图（本机 GUI 需 `dsh web` 打印的带令牌地址，无法自动打开），宽度为按 14px 全宽字符的估算值。
+
+- **「查看模型用量、成本与性能分析」入口从「账户」分组标题行移到「添加账户」按钮下方，并重写为整行入口行按钮。** 原先它用平台 primitives 的 ghost 小按钮（28px 高、透明底、12px 灰字），和「刷新」并排在同一条 `.cc-groupHead` 里：14 个字的标签把「账户」标题挤向左侧，窄面板下还要和标题争同一行。新形态 `.cc-usageEntry` 与上方「添加账户」同宽（100%、16px 圆角）垒成一个按钮栈，但用 40px 高度、0.5px `border-l4` 实线、12px 字、左侧线性柱状图 SVG、右侧细箭头，hover 同时提亮底色／边框／文字；颜色全部取主题别名，不写死色值，文案以 `text-overflow:ellipsis` 兜底窄面板。**层级**：入口由「标题行动作」降为「卡片底部次级出口」，与主操作「添加账户」拉开。渲染条件不变：仍在 Host 暴露 `selectPanel` 接缝时才出现。**已知取舍**：入口不再出现在账户卡片标题行，需要滚到卡片底部才看得到。**验证边界**：未做真实浏览器渲染截图，尺寸按现有页面度量（12px 字号下限、16px 圆角、44px 主按钮）对齐。
+
+### Fixed
+
+- **余额不足的账号不再在每个请求里被反复重撞（issue #51 仍未关闭的另一半）。** 现场实测（2026-10-21）：账户余额 $0.0874、5 小时与周窗口都未超时时，所有付费模型返回 `400 BAD_REQUEST / "insufficient credits"`，而免费模型仍 200——这证明该拒绝是「模型/余额」事实而非密钥故障，所以 `unavailable` 一直有意不落**账号**标记（否则余额为空的账号连 `:free` 模型都不可用）。但完全不记的代价是：每一次新请求都会重新选中同一个账号并再吃一次 400；在多账号池里当它是回退候选时，用户最终看到的是「自己没选过的那个账号余额不足」的报错（对应反馈者的「选了还有额度的账号却被切到没余额账号」）。现在 `unavailable` 落一条**按「密钥 + 模型」限时的偏好降级**（`markModelUnavailable()`，`MODEL_UNAVAILABLE_TTL_MS` = 5 分钟）：同一模型的后续请求先跳过该账号，其它模型与 `:free` 模型不受影响；全部候选都被标记时退回全量（是降级不是禁用，唯一账号仍会交付）；401 换密钥时清空该密钥的软标记。`accountUsable()`、账号卡片与 `activeAccount()` 均不受影响。用例：`tests/accounts.test.ts` 新增 5 条（按模型跳过、其它模型不受影响、唯一账号仍交付、软标记是偏好不是禁令、按时钟过期），全量 1079 条通过。
+
+- **网关的 `400 JSON node count cannot exceed 32768` 不再落入通用 400 文案（issue #96）。** 这是请求体的**结构**上限，不是 token 上下文超限：报告现场 token 占用仅 22.6%（225,991 / 1,000,000），但 1,436 条消息、61 个 image content part、累计 675 次 tool/call 的请求体已经撞上限；`generateHttpError()` 原先没有分支命中这句，最终落到「请检查模型、套餐和请求设置」的通用文案，上游唯一点名上限的那句话被丢弃。现在 `JSON_NODE_LIMIT_REJECTION` 在上下文溢出分支之后单独接管：中英双语引用网关给出的上限数值，说明「限制的是请求结构，不是 token 长度」，建议新建会话或减少消息与图片；失败码保持 `PROVIDER_HTTP_ERROR`（不重试、不触发压缩、不轮换账号）。文案用「压缩上下文通常不足以降到该上限以内」而非「无效」——压缩会减少消息条数与 content part 数，节点数可能随之下降，只是通常不够。上游原文仍按 `generateHttpError()` 的展示层规则不回显，只引用其上限数字。用例：`tests/adapter.test.ts` 用 issue 里的双层转义真实报文回放，断言失败码、上限 32768、双语「通常不足」且只发 1 次请求。
+
 ## [0.14.5] - 2026-10-21
 
 ### Changed
