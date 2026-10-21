@@ -3214,11 +3214,17 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
 
     // The model id reaches key resolution so hosts with model→account routing
     // rules can pick the account that covers this model.
-    const finishCredentials = timing.phase('credentials')
-    let apiKey: string
-    try { apiKey = await this.deps.resolveApiKey(connection, options.model) } finally { finishCredentials() }
-    options.signal?.throwIfAborted()
+    //
+    // 凭据解析与正文装配互不依赖：正文从不携带密钥，健康账号池的解析也只读内存。
+    // 两者的等待时间因此重叠，而不是相加 —— 图片读取与正文 JSON 装配（这部分在
+    // 带图请求里才是真正的开销）现在与账号池/凭据等待同时进行，线上字节不变。
+    //
+    // 通道无法提前选定：`protocolCache` 与套餐档位都按账号缓存，必须等密钥。
+    // 但 {@link resolveProtocol} 里与密钥无关的三支可以先算 —— 强制 cli、只有
+    // messages 端点服务的模型（Claude 家族），以及 Provider API 的默认值。
+    // 猜错只多一次重建（与既有的协议回退、账号轮换同价），猜对即直接复用。
     let maxTokens = Math.min(budget.max, learnedOutputLimit(connection.apiBase, options.model))
+    const builtMaxTokens = maxTokens
 
     const supported = KNOWN_EFFORTS[options.model]
     // 标题调用默认只有 64 个输出词元，先思考可能耗尽预算而没有正文（问题 #88）。
@@ -3247,23 +3253,17 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
       .filter(Boolean)
       .join('\n\n')
 
-    // Endpoint protocol: billing/cache may know Go plan -> CLI; unknown
-    // accounts default to the documented Provider Chat Completions surface
-    // (`resolveProtocol()` routes Claude to Messages on Provider API access).
-    let protocol: CommandCodeProtocol = this.resolveProtocol(connection, apiKey, options.model, modelEntry)
-    // 反代 messages 端点对本次账号的权限拒绝（issue #84）。只活在一次 stream()
-    // 调用里，并在最终错误文案中留痕：它描述的是这一条 Claude 链路，既不能
-    // 缓存成整个网关的协议结论，也不该覆盖 CLI 直连自己的失败原因。
-    let messagesPermissionRejection: string | undefined
     // Image budget (issue #37): the body is built from the PROJECTED history,
     // never the raw one. Rung 0 is the standing budget; a 413 below steps down
     // the ladder. The session surface owns the offload set, so this throws
     // `IMAGE_OFFLOAD_REQUIRED` when more images must go; the retry then
     // arrives with the surface already updated.
-    let requestOptions = withSurfaceOffload(
-      options, this.surfaceOffload, REQUEST_IMAGE_BUDGETS[0]!,
-      connection.offloadSeenImagesForCache === true && protocol === 'cli' ? options.model : undefined,
-    )
+    //
+    // This first pass is the accounting half only, and runs before ANY I/O: a
+    // history that must commit an offload first costs neither a credential
+    // round trip nor a single image read. The CLI-only cache knob below is
+    // re-applied once the account's transport is actually known.
+    let requestOptions = withSurfaceOffload(options, this.surfaceOffload, REQUEST_IMAGE_BUDGETS[0]!)
     const buildBody = async (target: CommandCodeProtocol): Promise<Record<string, unknown>> => {
       const finishBody = timing.phase('body')
       try {
@@ -3288,7 +3288,61 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
       return built
       } finally { finishBody() }
     }
-    let body: Record<string, unknown> = await buildBody(protocol)
+
+    const provisionalProtocol: CommandCodeProtocol = connection.protocol === 'cli'
+      ? 'cli'
+      : this.routesToMessages(options.model, modelEntry) ? 'messages' : 'openai'
+    const finishCredentials = timing.phase('credentials')
+    const credentials = this.deps.resolveApiKey(connection, options.model)
+    // 两条路径都可能在对方完成前失败；先挂处理器，避免其中一条的拒绝变成未处理
+    // 拒绝（`await` 仍按原样重抛，错误对象与身份不变）。
+    void credentials.catch(() => undefined)
+    // The opt-in CLI cache mitigation (issue #64) refuses on a fact only the
+    // resolved key can name — the account's transport — and it must refuse
+    // BEFORE the first image read, so that one path keeps the strictly
+    // sequential order it has always had. Every other request is free to
+    // overlap its body with credential resolution.
+    const provisionalBody = connection.offloadSeenImagesForCache === true
+      ? undefined
+      : buildBody(provisionalProtocol)
+    void provisionalBody?.catch(() => undefined)
+    let apiKey: string
+    try { apiKey = await credentials } finally { finishCredentials() }
+    options.signal?.throwIfAborted()
+    // 等待期间别的请求可能刷新过目录或学到更低的上限：重算一次，让正文、指纹
+    // 与实发预算描述同一个数字（循环顶部那次收紧仍然兜底）。
+    maxTokens = Math.min(budget.max, learnedOutputLimit(connection.apiBase, options.model))
+
+    // Endpoint protocol: billing/cache may know Go plan -> CLI; unknown
+    // accounts default to the documented Provider Chat Completions surface
+    // (`resolveProtocol()` routes Claude to Messages on Provider API access).
+    let protocol: CommandCodeProtocol = this.resolveProtocol(connection, apiKey, options.model, modelEntry)
+    // The cache half of the gate, now that the REAL transport is known: the
+    // first pass above could only judge the byte budget, because the account's
+    // transport is what decides whether this mitigation applies at all. This
+    // can only ever THROW — it never changes the chosen rung — so a body
+    // already assembled for the same target stays valid.
+    if (protocol === 'cli' && connection.offloadSeenImagesForCache === true) {
+      requestOptions = withSurfaceOffload(
+        requestOptions, this.surfaceOffload, REQUEST_IMAGE_BUDGETS[0]!, options.model,
+      )
+    }
+    // 反推 messages 端点对本次账号的权限拒绝（issue #84）。只活在一次 stream()
+    // 调用里，并在最终错误文案中留痕：它描述的是这一条 Claude 链路，既不能
+    // 缓存成整个网关的协议结论，也不该覆盖 CLI 直连自己的失败原因。
+    let messagesPermissionRejection: string | undefined
+    let body: Record<string, unknown> = provisionalBody !== undefined && protocol === provisionalProtocol
+      ? await provisionalBody
+      : await buildBody(protocol)
+    // 凭据等待期间别的请求可能学到更低的上限，而正文是在那之前装配的：把新数字
+    // 补写进去，指纹与实发预算才描述同一次连接。被省略的字段继续保持省略
+    // （issue #74），预算本身则同步收紧，供本轮的降档与拒绝恢复读取。
+    if (maxTokens !== builtMaxTokens) {
+      budget.max = Math.min(budget.max, maxTokens)
+      if (!omitOutputTokens(connection.maxOutputTokens, protocol, options.maxTokens)) {
+        assignMaxTokens(body, protocol, maxTokens)
+      }
+    }
     const serializedBodies = new WeakMap<Record<string, unknown>, string>()
 
     // The opt-in trace now starts before the first connect attempt so a cache
