@@ -8135,6 +8135,50 @@ test('同次请求并行读取图片不超过四张，重复图片及协议降�
   assert.equal(calls, 2)
 })
 
+test('凭据解析与图片读取并行，不再一次接一次地排队', async () => {
+  // 两个等待互不依赖（正文从不携带密钥，健康账号池的解析也只读内存），所以
+  // 它们必须重叠：先解析凭据再读图，等于把两者的等待时间相加。这条断言用
+  // 「凭据尚未返回时图片读取已经开始」把重叠钉死，而不依赖墙钟时间。
+  const refs = Array.from({ length: 2 }, (_, i) => ({ ...imageRef(), attachmentId: AttachmentId(`parallel-image-${i}`) }))
+  const attachments = fakeAttachments(Object.fromEntries(refs.map((ref) => [ref.attachmentId, pngBytes])))
+  const original = attachments.readImageRequest.bind(attachments)
+  let releaseImage!: () => void
+  const imageGate = new Promise<void>((resolve) => { releaseImage = resolve })
+  let reads = 0
+  attachments.readImageRequest = async (ref, target) => {
+    reads++
+    await imageGate
+    return original(ref, target)
+  }
+  let releaseKey!: () => void
+  const keyGate = new Promise<void>((resolve) => { releaseKey = resolve })
+  let keyEntered!: () => void
+  const keyRequested = new Promise<void>((resolve) => { keyEntered = resolve })
+  const bodies: Record<string, unknown>[] = []
+  const adapter = makeAdapter({
+    options: () => OPENAI_OPTIONS(),
+    resolveAttachments: () => attachments,
+    resolveApiKey: async () => { keyEntered(); await keyGate; return 'user_test_key' },
+    fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(settlementFrames('openai').join(''))
+    }) as typeof fetch,
+  })
+  let settled = false
+  const running = collect(adapter.stream({ provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash',
+    messages: [{ id: messageId(), role: 'user', source: { kind: 'user' },
+      content: refs.map((attachment) => ({ type: 'image' as const, attachment })) }],
+  })).finally(() => { settled = true })
+  await keyRequested
+  for (let turn = 0; turn < 20 && reads === 0; turn++) await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.ok(reads > 0, '凭据仍在等待时图片读取就应已经开始')
+  assert.equal(settled, false)
+  releaseKey()
+  releaseImage()
+  await running
+  assert.equal(bodies.length, 1)
+  assert.equal((bodies[0]?.messages as unknown[]).length, 1)
+})
 test('目录刷新合并并发等待，单个调用取消不会影响其他调用', async (t) => {
   const path = join(tmpdir(), `cc-catalog-concurrent-${process.pid}.json`)
   t.after(() => rmSync(path, { force: true }))
