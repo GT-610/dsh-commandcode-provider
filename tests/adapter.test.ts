@@ -4508,6 +4508,19 @@ function ceilingRejection(status: number, message: string): Response {
   )
 }
 
+/**
+ * The shape issue #96's gateway actually sends: `error.message` is an escaped
+ * JSON string, so the sentence naming the cap only exists after one unwrap —
+ * in `ParsedProviderError.rawMessage`, not `message`. Reproduced verbatim so a
+ * regression in that unwrap path cannot hide behind a flat single-layer body.
+ */
+function nestedGatewayRejection(status: number, inner: Record<string, unknown>): Response {
+  return new Response(
+    JSON.stringify({ error: { message: `${JSON.stringify(inner)}\n`, type: 'invalid_request_error' } }),
+    { status },
+  )
+}
+
 test('an HTTP output-ceiling refusal retries once at the ceiling the endpoint names', async () => {
   const { adapter, model, sent, attempts } = ceilingProbeAdapter('claude-ceiling-http', (attempt) =>
     attempt === 0
@@ -4589,6 +4602,42 @@ test('a second output-ceiling refusal fails the turn and does not blame the cont
   // One downshift per turn; the second refusal surfaces rather than looping.
   assert.deepEqual(sent(), [64_000, 8_000])
   assert.equal(attempts(), 2)
+})
+
+test('a JSON node-count refusal names the gateway structure cap, not a context overflow (issue #96)', async () => {
+  // The gateway refused the request's JSON STRUCTURE — too many nodes —
+  // while the session was well inside the token window. Before this branch
+  // the refusal fell through to the generic wording, which drops the
+  // upstream sentence entirely, so the one fact that names the actual cap
+  // never reached the user.
+  const { adapter, model, attempts } = ceilingProbeAdapter('claude-node-limit', () =>
+    // issue #96's real body, double-encoded: the cap sentence lives only in
+    // `rawMessage`, which is the path this branch has to see.
+    nestedGatewayRejection(400, {
+      message: 'Invalid request JSON: JSON node count cannot exceed 32768 trace_id: 266affc7ac3a831b5846bdafebff8372',
+      type: 'invalid_request_error',
+    }))
+  await assert.rejects(
+    collect(adapter.stream({ provider: 'commandcode', model, messages: [userMessage('hi')] })),
+    (error: unknown) => {
+      const message = (error as Error).message
+      assert.equal((error as { code?: string }).code, 'PROVIDER_HTTP_ERROR')
+      // The cap the gateway stated, so the user can tell this failure apart
+      // from both a token budget and the generic refusal it used to land in.
+      assert.match(message, /32768/u)
+      assert.match(message, /JSON node limit/u)
+      // Not a context overflow: compaction shrinks the message and part
+      // count, so it can help — but usually not enough on its own. The
+      // wording has to say both, calling neither the session oversized nor
+      // compaction a guaranteed fix.
+      assert.doesNotMatch(message, /context window|上下文窗口/u)
+      assert.match(message, /compacting the session usually will not be enough/u)
+      assert.match(message, /压缩上下文通常不足以降到该上限以内/u)
+      return true
+    },
+  )
+  // Permanent and request-scoped: no ceiling to learn, nothing to resend.
+  assert.equal(attempts(), 1)
 })
 
 test('a ceiling learned from a refusal is what the next turn sends', async () => {

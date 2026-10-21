@@ -79,6 +79,19 @@ export function parseOutputCeiling(detail: string): number | undefined {
 }
 
 /**
+ * The gateway's cap on the request's JSON STRUCTURE: `JSON node count
+ * cannot exceed 32768` (issue #96). A structural limit, not a token one —
+ * a session heavy in messages, tool calls and images trips it while well
+ * inside the context window, so it needs its own wording: reported as the
+ * generic refusal, the one sentence naming the actual cap was dropped and
+ * the user had no lever at all; reported as a context overflow, the
+ * harness would compact tokens and resend a structure that still exceeds
+ * the cap. The stated limit is captured because the gateway owns the
+ * number and it can move.
+ */
+const JSON_NODE_LIMIT_REJECTION = /JSON node count cannot exceed\s+(\d+)/i
+
+/**
  * Whether one rejection says "ZDR requested, no ZDR-capable upstream": the
  * provider spells the code `cmd_zdr_no_providers` in JSON error bodies and
  * `CMD_ZDR_NO_PROVIDERS` in plain-text ones (the official CLI's own
@@ -364,6 +377,30 @@ export function generateHttpError(
       `Command Code API error ${status}: the request exceeds the model's context window`
       + ' — this session is being compacted and the request retried',
       `Command Code API 返回 ${status}：请求内容超出模型上下文窗口——正在压缩上下文后重试；如仍失败，请新建会话或减少上下文`,
+      { status },
+    )
+  }
+  const nodeLimit = status < 500 ? JSON_NODE_LIMIT_REJECTION.exec(overflowDetail)?.[1] : undefined
+  if (nodeLimit !== undefined) {
+    // The gateway capped the request's JSON structure, not its token
+    // length (issue #96). Checked after the overflow branch — the wording
+    // matches neither overflow pattern, and conflating the two would send
+    // the harness to compact a session whose resent structure exceeds the
+    // same cap. Compaction is not called useless: it shrinks the message
+    // and part count, so the node count can fall below the cap — it just
+    // usually will not be enough on its own. Like the output-limit branch
+    // above, the advice is the only lever: fewer messages and images, or
+    // a new session. The raw upstream sentence itself stays unshown, per
+    // the display rule at the bottom of this function; only its stated
+    // limit is quoted.
+    return bilingual(
+      'PROVIDER_HTTP_ERROR',
+      `Command Code API error ${status}: the request exceeds the gateway's JSON node limit`
+      + ` (node count cannot exceed ${nodeLimit}) — the cap is on the request's structure,`
+      + ' not its token length, so compacting the session usually will not be enough; start'
+      + ' a new session, or reduce the messages and images in this one',
+      `Command Code API 返回 ${status}：请求超过网关的 JSON 节点数上限（节点数不能超过 ${nodeLimit}）`
+      + '——限制的是请求结构，不是 token 长度，压缩上下文通常不足以降到该上限以内；请新建会话，或减少本会话中的消息与图片',
       { status },
     )
   }
