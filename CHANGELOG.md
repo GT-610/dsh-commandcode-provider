@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `gradeHeaderTimeout()` 的指纹改用**已经序列化好的实发字符串**求摘要（`sha256Hex()`），不再对 `body` 重新 `JSON.stringify`：超时是最常重复的路径，而带图历史可达数 MB。这也更准确——实发字符串就是网关看到的字节，重新 stringify 会在 surrogate 清洗真的删掉过字符时描述到不同的字节，把一次连续超时拆成两条 streak。
   - `toolParametersSchema()` 的根节点结果按 `parameters` 对象身份记忆化（`WeakMap`）。每个通道在每次尝试时都重建工具列表，而账号轮换、协议回退、降档重试都会让同一批 schema 再走一遍。同时纠正原注释「每条路径都返回副本」——`type: 'object'` 快路径一直返回调用方自己的对象，调用方靠它拿到同一个已冻结的 schema。
   - 用量卡片与选择器的套餐过滤共享账户端点响应：两处读的是同一批端点、同一个账号，成功响应按 `[apiBase, key, 完整 URL]` 记入短命表（`ACCOUNT_FACTS_TTL_MS` 30 秒）。只缓存成功响应（失败必须重试，否则报告的 `failures` 与 `classifyTotalFailure` 结论会描述一次没真正发出的请求）；`/alpha/usage/summary` 明确不共享——那是用户正盯着、旁边写着读取时间的数字。
-  - 用量刷新区分自动与显式路径：`refresh({ auto: true })` 用于首屏与面板 tick，可在 `USAGE_AUTO_REFRESH_COALESCE_MS`（5 秒）内复用刚刚读到的结果；按钮、保存、换凭据等显式调用永远重新读取，`fetchedAt` 因此仍如实反映读取时刻。
+  - 用量刷新区分自动与显式路径：`refresh({ auto: true })` 用于账户卡片首屏、面板首屏与面板 tick（injected 面因此分成 `refreshUsageAuto()` 与 `refreshUsage()` 两个入口），可在 `USAGE_AUTO_REFRESH_COALESCE_MS`（5 秒）内复用刚刚读到的结果；按钮、保存、换凭据等显式调用永远重新读取，`fetchedAt` 因此仍如实反映读取时刻。
   - 面板自动刷新在文档隐藏时跳过读取但照旧重排定时器，重新可见立即补读一次；首屏仍无条件读取。可见性做成可注入接缝（`AutoRefreshVisibility`），非浏览器环境视为始终可见。
 
   用例：`tests/adapter.test.ts` 新增「凭据解析与图片读取并行」「目录已在内存时不再等一次联网刷新」「超时定级复用已序列化的正文」「同一份工具 schema 只归一化一次」「用量卡片与选择器共享同一份账户事实」；`tests/panel.test.ts` 与 `tests/usage-client.test.ts` 新增自动/显式刷新与可见性用例。上述新增用例在对应实现回退时均失败。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1120／1120** 通过；`npm run build` 重建 `lib/` 后无差异（说明提交的 bundle 与源码一致）。未在真实宿主中人工验证。（此前一次本机运行的 16 条 `tests/web-search.test.ts` 失败源于 `node_modules` 与 lockfile 漂移——实装 `@deepseek-ai/dsh-web` `0.2.1-alpha.3` 而 lockfile 钉 `0.2.1-rc.2`，按 lockfile 重装即消失，与本批改动无关。）
