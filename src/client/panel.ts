@@ -537,6 +537,30 @@ const REAL_TIMER: AutoRefreshTimer = {
   clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 }
 
+/**
+ * Whether a tick should bother the Host.
+ *
+ * A background tab keeps its React tree mounted, so without this the loop goes
+ * on fetching a four-call report every {@link PANEL_AUTO_REFRESH_MS} for a page
+ * nobody is looking at. The seam is injectable so node tests can drive it; the
+ * default asks the browser, and a non-browser (or a browser without
+ * `document`) is treated as always visible rather than never refreshing.
+ */
+export interface AutoRefreshVisibility {
+  isVisible(): boolean
+  /** Notified when visibility changes; returns the unsubscribe. */
+  subscribe?(onChange: () => void): () => void
+}
+
+const DOCUMENT_VISIBILITY: AutoRefreshVisibility = {
+  isVisible: () => (typeof document === 'undefined' ? true : document.visibilityState !== 'hidden'),
+  subscribe: (onChange) => {
+    if (typeof document === 'undefined') return () => undefined
+    document.addEventListener('visibilitychange', onChange)
+    return () => document.removeEventListener('visibilitychange', onChange)
+  },
+}
+
 /** Live mount count of {@link startPanelAutoRefresh}. */
 let references = 0
 /** Owner ticket of the running loop, if any. */
@@ -556,32 +580,51 @@ let handle: unknown
  * tick goes through `usage.refresh()`, which collapses a concurrent fetch onto
  * the in-flight one. Returns the disposer that drops this surface's reference.
  *
+ * A hidden document is still mounted, so its ticks are SKIPPED: a background
+ * tab must not keep paying for a four-call report nobody reads. The tick is
+ * rescheduled either way, so the loop survives, and becoming visible again
+ * fetches at once — the data on screen is by then older than a tick would have
+ * left it. The first paint still fetches unconditionally: it is the moment the
+ * row appears, and there is nothing to show without it.
+ *
  * @param usage - the shared usage controller.
  * @param isConfigured - whether a credential exists right now (re-read per tick).
  * @param timer - timer seam for tests.
+ * @param visibility - visibility seam; see {@link AutoRefreshVisibility}.
  */
 export function startPanelAutoRefresh(
   usage: RefreshSource,
   isConfigured: () => boolean,
   timer: AutoRefreshTimer = REAL_TIMER,
+  visibility: AutoRefreshVisibility = DOCUMENT_VISIBILITY,
 ): () => void {
   references += 1
   const ticket = ++ticketSeq
+  const fetch = (): void => {
+    if (isConfigured()) void usage.refresh({ auto: true })
+  }
   const tick = (): void => {
     if (activeTicket !== ticket) return
     // `auto`: nobody clicked anything, so a result fetched a moment ago (by the
     // settings page's card, or by the tick that just ran) is the same answer.
-    if (isConfigured()) void usage.refresh({ auto: true })
+    if (visibility.isVisible()) fetch()
     handle = timer.set(tick, PANEL_AUTO_REFRESH_MS)
   }
 
+  let unsubscribe: (() => void) | undefined
   if (activeTicket === undefined) {
     activeTicket = ticket
     handle = timer.set(tick, PANEL_AUTO_REFRESH_MS)
     // First paint: refresh immediately so the row is never blank on arrival.
     // `auto` for the same reason: the account card is very likely mounting in
     // the same tick and asking the identical question.
-    if (isConfigured()) void usage.refresh({ auto: true })
+    fetch()
+    // Coming back into view is the one moment the visible data is KNOWN to be
+    // stale, so it is also the one moment worth fetching outside the tick.
+    unsubscribe = visibility.subscribe?.(() => {
+      if (activeTicket !== ticket || !visibility.isVisible()) return
+      fetch()
+    })
   }
 
   let stopped = false
@@ -594,6 +637,8 @@ export function startPanelAutoRefresh(
     // is not necessarily the last to unmount.
     if (references > 0) return
     activeTicket = undefined
+    unsubscribe?.()
+    unsubscribe = undefined
     if (handle !== undefined) {
       timer.clear(handle)
       handle = undefined

@@ -636,6 +636,46 @@ test('面板的自动刷新走 auto 路径，显式刷新不受影响', () => {
   resetPanelAutoRefresh()
 })
 
+test('隐藏的页面不再轮询，重新可见时立刻补读一次', () => {
+  // 后台标签页的 React 树仍然挂载着，若不看可见性，它就会为一个没人看的页面
+  // 每两分钟付四次上游调用。tick 照旧重排（循环不能断），但隐藏时跳过读取；
+  // 重新可见是唯一「已知数据已过期」的时刻，所以要立即补读。
+  resetPanelAutoRefresh()
+  const timer = fakeTimer()
+  let refreshes = 0
+  let visible = false
+  let notify: (() => void) | undefined
+  const visibility = {
+    isVisible: () => visible,
+    subscribe: (onChange: () => void) => { notify = onChange; return () => { notify = undefined } },
+  }
+  const source = {
+    state: () => usage(),
+    refresh: async () => {
+      refreshes += 1
+    },
+  }
+  const stop = startPanelAutoRefresh(source, () => true, timer, visibility)
+  // 首屏无条件读取：那一刻行刚要出现，没有数据就没得显示。
+  assert.equal(refreshes, 1, '首屏必须读一次，哪怕此刻不可见')
+
+  timer.fire()
+  assert.equal(refreshes, 1, '隐藏时的 tick 不发起读取')
+  assert.equal(timer.pending(), 1, '循环必须继续重排，否则恢复可见后也不会再跑')
+
+  visible = true
+  notify?.()
+  assert.equal(refreshes, 2, '重新可见要立刻补读一次')
+
+  timer.fire()
+  assert.equal(refreshes, 3, '可见后 tick 恢复读取')
+
+  // 停止后必须解绑可见性监听，否则重挂载会累积监听。
+  stop()
+  assert.equal(notify, undefined)
+  resetPanelAutoRefresh()
+})
+
 test('omitted purchased and free balances remain unknown while explicit zero is shown', () => {
   const view = buildPanelView({ apiKeyConfigured: false, usage: usage({ report: { accounts: [entry({ report: {
     credits: { ...CREDITS, purchasedCredits: 0, freeCredits: 0, purchasedReported: true, freeReported: false },
