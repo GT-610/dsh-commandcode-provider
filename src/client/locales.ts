@@ -29,7 +29,6 @@ export type SettingsCommandCodeKey =
   | 'apiKeyUnset'
   | 'apiKeyLocked'
   | 'apiBase'
-  | 'apiBaseHint'
   | 'requestTimeoutMs'
   | 'requestTimeoutMsHint'
   | 'streamIdleTimeoutMs'
@@ -99,6 +98,8 @@ export type SettingsCommandCodeKey =
   | 'unitSeconds'
   | 'unitTokens'
   | 'unitRetries'
+  | 'placeholderCatalog'
+  | 'placeholderAuto'
   | 'invalidNumber'
   | 'numberTooSmall'
   | 'numberTooLarge'
@@ -268,16 +269,14 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   apiKeyUnset: '未配置',
   apiKeyLocked: '密钥由只读来源提供',
   apiBase: 'API 地址',
-  apiBaseHint: '默认 https://api.commandcode.ai，一般无需修改。',
   requestTimeoutMs: '请求超时',
-  requestTimeoutMsHint: '等待响应首个字节的超时；默认 300 秒（与官方 CLI 一致）。Provider API 路由要等上游模型吐出第一个 token 才返回响应头，上游慢时仍可能不够；报超时时可按提示调高。',
+  requestTimeoutMsHint: '等待首个字节的超时，默认 300 秒；Provider API 要等上游模型吐出第一个 token 才返回，上游慢时可调高。',
   streamIdleTimeoutMs: '流空闲超时',
-  streamIdleTimeoutMsHint: '生成流停滞多久视为断连；默认 300 秒（长思考模型可静默数分钟，默认值刻意放宽）。',
+  streamIdleTimeoutMsHint: '生成流停滞多久视为断连，默认 300 秒（长思考模型可能静默数分钟）。',
   transportMaxRetries: '网络失败重试次数',
-  transportMaxRetriesHint: '连接失败时自动重试几次，默认 5（各次等待 0.5+1+2+4+8 秒，合计约 15 秒）。'
-    + '超过后直接报错，不再按指数退避长时间等待；填 0 表示不重试。限流、5xx 等由服务端要求重试的失败不受此项影响。',
+  transportMaxRetriesHint: '连接失败时自动重试的次数，默认 5 次（约 15 秒）；填 0 不重试，限流与 5xx 的重试不受影响。',
   offloadSeenImagesForCache: '已看过的图片不再重复发送',
-  offloadSeenImagesForCacheHint: '仅 CLI 传输。模型看过图片并回复后，永久用文字占位替代旧图片，以减少新增图片时的缓存回退。模型如需重看旧图，必须重新读取文件或让用户重新附加。默认关闭。',
+  offloadSeenImagesForCacheHint: '仅 CLI 传输。模型回复过的旧图片改用文字占位，减少新增图片时的缓存回退；重看需重新读取或附加。',
   advancedSettings: '高级设置',
   advancedSettingsHint: 'API 地址和网络参数，一般无需修改。',
   groupOverriddenOne: '已自定义 1 项',
@@ -299,13 +298,13 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   filterModelsByPlan: '隐藏套餐外模型',
   filterModelsByPlanHint: '只显示套餐内模型；按需余额账户仍显示全部。',
   webSearch: '用 Command Code 承载联网搜索',
-  webSearchHint: '使用同一密钥承载 dsh 的 web_search；关闭后恢复原搜索后端。若「网页搜索」设置里已显式选择其他后端，本开关不生效。',
+  webSearchHint: '用同一密钥承载 dsh 的 web_search；「网页搜索」里已指定其他后端时本开关不生效。',
   showSidebarQuota: '在侧边栏显示额度卡片',
-  showSidebarQuotaHint: '在侧边栏底部显示套餐与额度卡片，点击可打开完整仪表盘。默认关闭，关闭时不会为它后台刷新用量。',
+  showSidebarQuotaHint: '在侧边栏底部显示套餐与额度卡片，点击打开完整仪表盘；关闭时不在后台刷新用量。',
   zdr: '零数据保留（ZDR）',
   zdrHint: '仅使用不留存、不训练的上游；可用模型可能更少且价格通常更高。',
   accountsTitle: '账户',
-  accountsHint: '账户操作立即生效，无需保存。可以添加多个账户：当前账户达到用量限额或密钥失效时，请求会自动切换到下一个。',
+  accountsHint: '可以添加多个账户：当前账户达到用量限额或密钥失效时，请求会自动切换到下一个。',
   accountAdd: '添加账户',
   accountDefault: '默认账户',
   modelSearchPlaceholder: '搜索模型…',
@@ -314,20 +313,16 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   modelAllowance: '${amount}/月',
   modelAllowanceTitle: '该模型每月可用的额度（美元）。套餐内所有模型共用同一个月度额度池，这不是额外赠送的额度。',
   visibleModelsTitle: '模型白名单',
-  visibleModelsHint:
-    '勾选要保留的模型，模型选择器就只列出这些；一个都不勾选时则显示全部模型。'
-    + '这里显示网页与终端合并后的有效选择；保存后两端一致，套餐权限仍独立过滤。',
+  visibleModelsHint: '模型选择器只列出勾选的模型，都不勾选则显示全部；网页与终端共用这份选择。',
   visibleModelsPick: '选择要保留的模型…',
   visibleModelsCount: '已选 {count} 个模型',
   visibleModelsShowAll: '显示全部',
   visibleModelsStaleHint: '有 {count} 个已选模型在目录中找不到了（可能已下架），不影响其他模型；可清理或保留。',
   visibleModelsCleanStale: '清理失效（{count}）',
   contextWindow: '自定义上下文长度',
-  contextWindowHint:
-    '覆盖模型目录公布的上下文窗口（对未单独覆盖的模型生效），影响上下文计量与自动压缩；'
-    + '留空跟随目录。支持 32K、1M 简写。',
+  contextWindowHint: '覆盖目录公布的上下文窗口，影响上下文计量与自动压缩；留空跟随目录，支持 32K、1M。',
   contextOverridesTitle: '按模型覆盖',
-  contextOverridesHint: '为单个模型单独设置上下文长度，优先于上面的全局值；模型下拉只列出模型白名单中的可见模型（显示全部时即整个目录）。',
+  contextOverridesHint: '为单个模型设置上下文长度，优先于上面的全局值；只能选白名单中的模型。',
   contextOverrideAdd: '添加模型',
   contextOverrideRemove: '移除该模型的上下文覆盖',
   contextOverrideModel: '模型',
@@ -337,18 +332,19 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   contextWindowTooLarge: '上下文长度不能大于 10,000,000',
   contextWindowInvalid: '请输入有效的整数 token 数',
   maxOutputTokens: '单轮输出上限',
-  maxOutputTokensHint:
-    '留空＝按模型推导（默认）；正整数＝不超过模型上限与网关上限 131072；'
-    + '0＝不发送该字段（仅 CLI 与 OpenAI 有效，Claude 的 Messages 端点必填）。支持 64K 简写。',
+  maxOutputTokensHint: '留空按模型推导；0＝不发送该字段（仅 CLI 与 OpenAI，Claude 的 Messages 端点必填）。上限 131072，支持 64K。',
   maxOutputTokensTooSmall: '输出上限不能小于 0（0 表示不发送该字段）',
   maxOutputTokensTooLarge: '输出上限不能大于 131072（网关上限）',
   maxOutputTokensInvalid: '请输入 0 或有效的整数 token 数',
-  overridden: '已覆盖',
+  overridden: '已自定义',
   reset: '重置',
   // 数字输入框右侧的单位后缀；标签里不再重复单位。
   unitSeconds: '秒',
   unitTokens: 'tokens',
   unitRetries: '次',
+  // 空输入框里的占位：说明留空时实际用的是什么。
+  placeholderCatalog: '跟随目录',
+  placeholderAuto: '自动',
   invalidNumber: '无效数字',
   numberTooSmall: '重试次数不能小于 0',
   numberTooLarge: '重试次数不能大于 50',
@@ -439,7 +435,7 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   cardRouteActive: '已启用',
   cardLoadingHint: '正在读取 Command Code 配置…',
   cardRegistrationHint: '此卡片由 Command Code 插件提供，正在等待设置页装配，稍后即可显示完整内容。',
-  accountsRotationHint: '账户操作立即生效。当前账户达到限额或密钥失效时，请求会按列表顺序切换到下一个可用账户。',
+  accountsRotationHint: '当前账户达到限额或密钥失效时，请求会按列表顺序切换到下一个可用账户。',
   accountModeAuto: '使用方式：自动切换（按列表顺序）',
   accountModePinned: '使用方式：固定使用「{name}」，不可用时仍会自动切换',
   accountStatusPinned: '已固定',
@@ -475,7 +471,7 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   accountEnrollmentCleanupRetry: '重试清理',
   accountRefSeparator: '：',
   accountModels: '专用模型',
-  accountModelsHint: '选中的模型优先由此账户处理，此账户不可用时仍会自动切换。一个模型只属于一个账户，选中会把它从其他账户移过来。',
+  accountModelsHint: '选中的模型优先由此账户处理，不可用时仍会自动切换；一个模型只归属一个账户。',
   accountModelOwner: '属于 {name}',
   modelPick: '选择模型…',
   modelCount: '已选 {count} 个模型',
@@ -537,19 +533,14 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   apiKeyUnset: 'Not configured',
   apiKeyLocked: 'Key provided by a read-only source',
   apiBase: 'API base URL',
-  apiBaseHint: 'Defaults to https://api.commandcode.ai; usually leave as-is.',
   requestTimeoutMs: 'Request timeout',
-  requestTimeoutMsHint: 'Time to wait for the first response byte; default 300 s (the official CLI’s). The Provider API route withholds headers until the upstream model emits its first token, so a slow upstream can still outlast the default; raise it when a timeout message suggests it.',
+  requestTimeoutMsHint: 'Wait for the first response byte; default 300 s. The Provider API route answers only after the upstream’s first token, so raise it for a slow upstream.',
   streamIdleTimeoutMs: 'Stream idle timeout',
-  streamIdleTimeoutMsHint: 'How long a stalled stream is treated as dead; default 300 s'
-    + ' (deliberately generous — long-thinking models can stay silent for minutes).',
+  streamIdleTimeoutMsHint: 'How long a stalled stream counts as dead; default 300 s (long-thinking models can go quiet for minutes).',
   transportMaxRetries: 'Transport retries',
-  transportMaxRetriesHint: 'How many times a failed connection is retried automatically; default 5'
-    + ' (waits of 0.5+1+2+4+8s, ~15s in total). After that the failure is reported instead of waiting'
-    + ' on the exponential backoff. 0 disables the retries. Rate limits and 5xx answers keep their'
-    + ' own, longer retry window.',
+  transportMaxRetriesHint: 'Automatic retries after a failed connection; default 5 (~15 s in all). 0 disables them; rate limits and 5xx keep their own retries.',
   offloadSeenImagesForCache: 'Stop replaying images already seen',
-  offloadSeenImagesForCacheHint: 'CLI transport only. After this model responds to an image, durably replace older pixels with text to avoid cache rollback when another image arrives. To inspect an old image again, the model must reread its file or the user must attach it again. Off by default.',
+  offloadSeenImagesForCacheHint: 'CLI transport only. Images the model already answered become text placeholders, so a new image no longer rolls back the cache; to see one again, reread or reattach it.',
   advancedSettings: 'Advanced',
   advancedSettingsHint: 'API base URL and network limits; usually leave as-is.',
   groupOverriddenOne: '1 customized',
@@ -570,13 +561,13 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   filterModelsByPlan: 'Hide out-of-plan models',
   filterModelsByPlanHint: 'Show only models in your plan; on-demand credit accounts still see the full catalog.',
   webSearch: 'Serve dsh web search with Command Code',
-  webSearchHint: 'Use the same key for dsh web search; turning it off restores the previous backend. When the Web search settings already pin another backend, this switch has no effect.',
+  webSearchHint: 'Use the same key for dsh web search. No effect while the Web search settings pin another backend.',
   showSidebarQuota: 'Show the quota card in the sidebar',
-  showSidebarQuotaHint: 'Show a plan and quota card at the bottom of the sidebar that opens the full dashboard. Off by default; while off, no background usage refresh runs for it.',
+  showSidebarQuotaHint: 'Show a plan and quota card at the bottom of the sidebar that opens the full dashboard; while off, nothing refreshes in the background.',
   zdr: 'Zero data retention (ZDR)',
   zdrHint: 'Use only upstreams that retain no data and do not train on requests; availability and pricing may differ.',
   accountsTitle: 'Accounts',
-  accountsHint: 'Account actions apply immediately, no save needed. Add more accounts and requests switch to the next one when the current account hits its usage limit or its key stops working.',
+  accountsHint: 'Add more accounts and requests switch to the next one when the current account hits its usage limit or its key stops working.',
   accountAdd: 'Add account',
   accountDefault: 'Default account',
   modelSearchPlaceholder: 'Search models…',
@@ -585,10 +576,7 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   modelAllowance: '${amount}/mo',
   modelAllowanceTitle: 'Monthly usage this model can draw, in USD. Every model shares one monthly pool — this is not extra credit on top of the plan.',
   visibleModelsTitle: 'Model allowlist',
-  visibleModelsHint:
-    'Check the models you want to keep, and model pickers will list only those. '
-    + 'If nothing is checked, every model is shown. After saving, the change '
-    + 'applies in both web and terminal settings. This page shows their effective selection; plan access is filtered separately.',
+  visibleModelsHint: 'Model pickers list only the checked models; check none to show all. Web and terminal share this selection.',
   visibleModelsPick: 'Select models to keep…',
   visibleModelsCount: '{count} model(s) selected',
   visibleModelsShowAll: 'Show all',
@@ -596,14 +584,9 @@ export const en: Record<SettingsCommandCodeKey, string> = {
     + ' other models are unaffected. Clean them up or keep them.',
   visibleModelsCleanStale: 'Clean stale ({count})',
   contextWindow: 'Custom context length',
-  contextWindowHint:
-    'Overrides the context window published by the model catalog, for every model without an override '
-    + 'of its own below; the context meter and auto-compaction follow it. Empty follows the catalog. '
-    + 'Shorthand like 32K or 1M is accepted.',
+  contextWindowHint: 'Overrides the catalog’s context window; the context meter and auto-compaction follow it. Empty follows the catalog; 32K or 1M accepted.',
   contextOverridesTitle: 'Per-model overrides',
-  contextOverridesHint:
-    'Set a context length for one model; it wins over the global value above. The picker lists only the '
-    + 'models kept by the visible-models allowlist (the whole catalog while showing all).',
+  contextOverridesHint: 'Set one model’s context length; it wins over the global value above. Only allowlisted models can be picked.',
   contextOverrideAdd: 'Add model',
   contextOverrideRemove: 'Remove this model’s context override',
   contextOverrideModel: 'Model',
@@ -613,18 +596,17 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   contextWindowTooLarge: 'Context length must not exceed 10,000,000',
   contextWindowInvalid: 'Enter a valid whole-token count',
   maxOutputTokens: 'Output limit per turn',
-  maxOutputTokensHint:
-    'Empty derives it from the model (default). A positive number never exceeds the model ceiling or '
-    + 'the gateway’s 131,072. 0 omits the field (CLI and OpenAI only; Claude’s Messages endpoint '
-    + 'requires it). 64K shorthand accepted.',
+  maxOutputTokensHint: 'Empty derives it from the model. 0 omits the field (CLI and OpenAI only; Claude’s Messages endpoint requires it). Capped at 131,072; 64K accepted.',
   maxOutputTokensTooSmall: 'Output limit must be at least 0 (0 omits the field)',
   maxOutputTokensTooLarge: 'Output limit must not exceed 131,072 (the gateway cap)',
   maxOutputTokensInvalid: 'Enter 0 or a valid whole-token count',
-  overridden: 'Overridden',
+  overridden: 'Customized',
   reset: 'Reset',
   unitSeconds: 's',
   unitTokens: 'tokens',
   unitRetries: 'times',
+  placeholderCatalog: 'Catalog',
+  placeholderAuto: 'Auto',
   invalidNumber: 'Invalid number',
   numberTooSmall: 'Retries must be at least 0',
   numberTooLarge: 'Retries must not exceed 50',
@@ -715,7 +697,7 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   cardRouteActive: 'Active',
   cardLoadingHint: 'Loading the Command Code configuration…',
   cardRegistrationHint: 'This card is contributed by the Command Code plugin and is waiting for the settings page to finish assembling.',
-  accountsRotationHint: 'Account actions apply immediately. When the current account hits its limit or its key stops working, requests switch to the next usable account in list order.',
+  accountsRotationHint: 'When the current account hits its limit or its key stops working, requests switch to the next usable account in list order.',
   accountModeAuto: 'Mode: switch automatically (list order)',
   accountModePinned: 'Mode: pinned to "{name}", still switching when it is unavailable',
   accountStatusPinned: 'Pinned',
@@ -751,7 +733,7 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   accountEnrollmentCleanupRetry: 'Retry cleanup',
   accountRefSeparator: ': ',
   accountModels: 'Dedicated models',
-  accountModelsHint: 'These models prefer this account and still switch when it is unavailable. A model belongs to one account; selecting it here moves it from any other.',
+  accountModelsHint: 'These models prefer this account and still switch when it is unavailable; a model belongs to one account.',
   accountModelOwner: 'on {name}',
   modelPick: 'Choose models…',
   modelCount: '{count} models selected',

@@ -324,12 +324,19 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   包含基础层隐藏项的显式覆盖。保存冲突或缺少原子写入能力时保留草稿。
   显示全部会选中已加载的目录模型；目录失败不清空已存选择。
 - **字号与校验说明**：页面及面板辅助文字至少 12px；重试次数提示与实际 0～50 次限制一致。
+- **设置页对齐宿主原生（2026-10-21，实测）**：行样式取自宿主「通用设置」渲染后的真实样式——行上下 16px、
+  每行下方 0.5px `border-l2` 细线（组内最后一行除外）、文字列与控件留 48px；行级下拉与输入框用宿主选择器的
+  形状（36px、12px 圆角、`bg-module-platform` 填充、无描边，类 `cc-fieldInput`），数字框单位写在框外并占
+  固定 48px 列，空值显示宿主默认值占位（`FIELD_DEFAULTS`，由 `tests/section.test.ts` 绑定到 adapter／
+  transport-retry 常量）；面板里的输入仍用描边的 `cc-input`。分组头的中性摘要是灰色文字（`GroupSummary`），
+  只有警告与错误用彩色徽标。账户卡片展开后隐藏卡片头的小额度条，数字块只留一排 4 个，余额并为一行，时间去掉
+  秒（`formatResetAtShort`）。
 - **设置页统一风格（2026-10-21）**：按钮一律用宿主 `Button` 原语（28px／8px 圆角、36px／12px
   圆角，次要操作用 `outline`，危险确认用 `outline` + `cc-dangerButton`；保存条也用它，条的 16px 圆角与按钮
   12px 圆角同心）；容器只有三种——实体卡片（账户，0.5px 描边、12px 圆角）、面板（`cc-panel`，填充底、12px
   圆角，承载添加账户、粘贴密钥、重命名）、数值块（`cc-usageStat`，8px 圆角）；登录状态、无密钥引导、移除确认、
-  用量阻断都走 `Notice`（新增成功档）；账户状态徽标用 `cc-badgeOk／Warn／Error`；输入框、带单位输入框（`cc-unitInput`，单位作后缀，标签不再重复单位）、
-  模型选择器统一 32px／8px 圆角／0.5px `border-l4`；「重置」是行尾 28px 图标按钮，未覆盖的行保留同宽空位
+  用量阻断都走 `Notice`（新增成功档）；账户状态徽标用 `cc-badgeOk／Warn／Error`；行级控件形状见上一条
+  （单位在框外，标签不再重复单位）；「重置」是行尾 28px 图标按钮，未覆盖的行保留同宽空位
   使控件右缘对齐；结果、警告与失败统一用 `Notice`（`cc-notice`，中性／警告／错误三档，带线性图标）；
   页面图标只用 `section.tsx` 里的 `Icon` 线性 SVG，不用 `×`、`↗` 等字符。Models 页服务商卡片
   （`card.tsx`、`login-row.tsx`）仍用旧的 `cc-field`／`cc-reset` 类，新类名刻意不与之重名。

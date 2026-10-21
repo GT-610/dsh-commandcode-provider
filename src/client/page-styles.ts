@@ -27,21 +27,23 @@ export const PAGE_CSS_ID = '@mars-sea/dsh-commandcode-provider/CommandCodeSettin
 /**
  * The settings-page stylesheet.
  *
- * Row metrics follow the harness's own settings pages so the page sits beside
- * General and Models without looking foreign: a row is 12px of padding, its
- * title 14/22 label-primary and its description 12/18 label-tertiary, the
- * control on the right. The hairline rhythm is section-level: a 0.5px
- * border-l2 rule separates the GROUPS (see `cc-groupDivided`), never the rows
- * inside one. The page title is 18/26 and group titles 14/22, both 600.
+ * Row metrics are the harness General page's own, read from its rendered
+ * styles (2026-10-21) so the page sits beside it without looking foreign: a
+ * row is 16px of vertical padding with a 0.5px border-l2 line under it, its
+ * text column keeps 48px clear of the control, the title is 14/22
+ * label-primary and the description 12/18 label-tertiary. A 0.5px border-l2
+ * rule also separates the groups (`cc-groupDivided`). The page title is 18/26
+ * and group titles 14/22, both 600.
  *
- * One control family (the unified settings style): buttons are the harness
- * `Button` primitive (28px / 8px corners, 36px / 12px corners); every field
- * control — text input, unit input, model selector, per-model select — is 32px
- * with an 8px radius and a 0.5px border-l4 edge; icon buttons are 28px with an
- * 8px radius. Results and warnings are `cc-notice` blocks (a 12px-radius
- * tinted surface with a line icon) rather than loose red paragraphs. Errors
- * use state-error-primary; tinted surfaces fall back to a color-mix of the
- * state colour where the theme has no tertiary token.
+ * One control family: buttons are the harness `Button` primitive (28px / 8px
+ * corners, 36px / 12px corners); the row-level selector and inputs take the
+ * harness selector's shape — 36px, 12px corners, a bg-module-platform fill, no
+ * stroke — with a number's unit beside the box; inputs inside a filled panel
+ * keep the outlined `cc-input` so they stay visible on the fill; icon buttons
+ * are 28px with an 8px radius. Results and warnings are `cc-notice` blocks (a
+ * 12px-radius tinted surface with a line icon) rather than loose red
+ * paragraphs. Errors use state-error-primary; tinted surfaces fall back to a
+ * color-mix of the state colour where the theme has no tertiary token.
  */
 export const PAGE_CSS = `
 .cc-section{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;display:flex}
@@ -64,9 +66,13 @@ export const PAGE_CSS = `
 .cc-groupBody[hidden]{display:none}
 .cc-disclosure:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .cc-rows{flex-direction:column;display:flex}
-.cc-row{align-items:center;gap:8px;display:flex;padding:12px 0}
+.cc-row{align-items:center;gap:8px;display:flex;padding:16px 0}
+/* The harness's own row rule: a 0.5px border-l2 line under every row of a
+ * list (read from the General page's row style), except the last one, whose
+ * edge is the next group's divider. */
+.cc-rows>.cc-row:not(:last-child){border-bottom:.5px solid var(--dsw-alias-border-l2)}
 .cc-rowFlush{padding:0}
-.cc-rowText{flex-direction:column;flex:1;gap:4px;min-width:0;padding-right:32px;display:flex}
+.cc-rowText{flex-direction:column;flex:1;gap:4px;min-width:0;padding-right:48px;display:flex}
 .cc-rowTitleLine{align-items:center;gap:8px;display:flex;min-width:0}
 .cc-rowTitle{min-width:0;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}
 .cc-rowDesc{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
@@ -75,19 +81,28 @@ export const PAGE_CSS = `
 .cc-rowError{margin:0;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
 .cc-rowControl{flex:none;align-items:center;justify-content:flex-end;gap:8px;display:inline-flex;max-width:60%}
 .cc-rowInput{width:200px}
-.cc-rowInputWide{width:280px}
-/* A number input with its unit as a suffix: the edge moves to the wrapper so
- * the unit sits inside the same 32px box, and the inner input loses its own. */
-.cc-unitInput{box-sizing:border-box;flex:none;align-items:center;display:inline-flex;height:32px;border:.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
-.cc-unitInput:focus-within{border-color:var(--dsw-alias-brand-primary)}
-.cc-unitInput>.cc-input{flex:1;width:auto;height:30px;padding-right:4px;border:0;background:0 0;text-align:right;font-variant-numeric:tabular-nums}
-.cc-unitInputInvalid,.cc-unitInputInvalid:focus-within{border-color:var(--dsw-alias-state-error-primary)}
-.cc-unitInput:has(>.cc-input:disabled){opacity:.6}
-.cc-unit{flex:none;padding-right:10px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;white-space:nowrap}
+.cc-rowInputWide{width:240px}
+/* The row-level field: the harness selector's own shape (36px, 12px corners,
+ * a bg-module-platform fill, no stroke). Text and number inputs on the rows
+ * use it so a row's controls share one surface; inputs nested in a filled
+ * panel keep cc-input, which stays visible on that fill. A number field
+ * carries its unit beside the box, as the General page's font-size field does. */
+.cc-fieldInput{box-sizing:border-box;flex:none;height:36px;min-width:0;padding:0 12px;border:0;border-radius:12px;background:var(--dsw-alias-bg-module-platform);font:inherit;color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px}
+.cc-fieldInput::placeholder{color:var(--dsw-alias-label-tertiary)}
+.cc-fieldInput:hover:not(:disabled):not(:focus-visible){background:var(--dsw-alias-interactive-bg-hover)}
+.cc-fieldInput:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}
+.cc-fieldInput:disabled{opacity:.5;cursor:default}
+.cc-fieldInputInvalid,.cc-fieldInputInvalid:focus-visible{box-shadow:inset 0 0 0 1px var(--dsw-alias-state-error-primary)}
+.cc-fieldNumber{width:120px;text-align:center;font-variant-numeric:tabular-nums}
+.cc-unitField{flex:none;align-items:center;gap:8px;display:inline-flex}
+/* A fixed unit column (wide enough for "tokens") keeps the number boxes of
+ * one group on a single left edge whatever their unit. */
+.cc-unit{min-width:48px;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:22px;white-space:nowrap}
 /* Holds the reset button's column on rows that have nothing to reset, so the
  * staged controls of one group line up on a single right edge. */
 .cc-resetSlot{flex:none;width:28px;height:28px}
 .cc-icon{flex:none;width:16px;height:16px}
+.cc-groupSummary{color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px;white-space:nowrap}
 .cc-badges{align-items:center;gap:8px;display:inline-flex}
 .cc-badge,.cc-badgeMuted{flex:none;align-items:center;display:inline-flex;white-space:nowrap;border-radius:999px;corner-shape:round;padding:1px 8px;font-size:12px;font-weight:500;line-height:17px}
 .cc-badge{background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary)}
@@ -109,8 +124,8 @@ export const PAGE_CSS = `
 .cc-inputInvalid{border-color:var(--dsw-alias-state-error-primary)}
 .cc-hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:12px;line-height:18px}
 .cc-modelSelectAnchor{flex-direction:column;align-items:stretch;gap:6px;display:inline-flex;min-width:160px}
-.cc-selector{box-sizing:border-box;align-items:center;gap:8px;display:inline-flex;height:32px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;text-align:left;cursor:pointer}
-.cc-selector:hover:not(:disabled){border-color:var(--dsw-alias-border-l3)}
+.cc-selector{box-sizing:border-box;align-items:center;gap:12px;display:inline-flex;height:36px;padding:0 14px;border:0;border-radius:12px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;text-align:left;cursor:pointer}
+.cc-selector:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 .cc-selector:disabled{cursor:default;opacity:.4}
 .cc-selector:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}
 .cc-selectorText{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -145,6 +160,7 @@ export const PAGE_CSS = `
 .cc-toggle:checked{background:var(--dsw-alias-brand-primary)}
 .cc-toggle::after{content:'';display:block;width:16px;height:16px;border-radius:50%;corner-shape:round;background:var(--dsw-alias-label-primary-foreground);transition:transform .12s ease}
 .cc-toggle:checked::after{transform:translateX(16px)}
+.cc-toggle:not(:checked)::after{background:var(--dsw-alias-switch-thumb,var(--dsw-alias-label-primary-foreground))}
 .cc-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .cc-toggle:disabled{cursor:default;opacity:.5}
 .cc-accountMode{align-items:center;gap:4px;display:flex;margin:-4px 0 12px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
@@ -174,7 +190,7 @@ export const PAGE_CSS = `
 .cc-contextItem{align-items:center;gap:8px;display:flex;flex-wrap:wrap;padding:8px 0}
 .cc-contextHead{align-items:center;gap:8px;display:flex;flex-wrap:wrap;padding:4px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
 .cc-contextHeadModel{flex:1;min-width:200px}
-.cc-contextHeadValue{flex:none;width:112px}
+.cc-contextHeadValue{flex:none;width:120px}
 .cc-contextHeadGap{flex:none;width:28px}
 .cc-contextSelect{position:relative;display:block;flex:1;min-width:200px}
 /* appearance:none swaps the platform arrow for the cc-contextCaret, shaped
@@ -183,7 +199,7 @@ export const PAGE_CSS = `
 .cc-contextModel{box-sizing:border-box;appearance:none;-webkit-appearance:none;width:100%;padding-inline-end:26px;text-overflow:ellipsis;cursor:pointer}
 .cc-contextCaret{position:absolute;inset-inline-end:12px;top:50%;width:6px;height:6px;border-right:1.5px solid var(--dsw-alias-label-tertiary);border-bottom:1.5px solid var(--dsw-alias-label-tertiary);transform:translateY(-50%) rotate(45deg);pointer-events:none}
 .cc-contextSelect:has(.cc-contextModel:disabled) .cc-contextCaret{opacity:.6}
-.cc-contextValue{flex:none;width:112px}
+.cc-contextValue{flex:none;width:120px}
 .cc-contextError{flex-basis:100%}
 .cc-tabDot{flex-shrink:0;width:8px;height:8px;border-radius:50%;corner-shape:round}
 .cc-tabDotOk{background:var(--dsw-alias-state-success-primary)}
@@ -214,8 +230,8 @@ export const PAGE_CSS = `
  * narrow details panel. */
 .cc-usageStats{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;display:grid}
 .cc-usageStatsActivity{grid-template-columns:repeat(4,minmax(0,1fr))}
-.cc-usageStatsBalance{grid-template-columns:repeat(3,minmax(0,1fr))}
 @container (max-width:460px){.cc-usageStatsActivity{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.cc-usageBalances{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
 .cc-usageStat{min-width:0;flex-direction:column;gap:2px;display:flex;padding:10px 12px;border-radius:8px;background:var(--dsw-alias-bg-module-platform)}
 .cc-usageStatLabel{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
 .cc-usageStatValue{color:var(--dsw-alias-label-primary);font-size:16px;font-weight:500;line-height:24px;font-variant-numeric:tabular-nums}

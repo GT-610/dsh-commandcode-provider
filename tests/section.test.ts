@@ -25,11 +25,14 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import type { SettingsPageState, StagedField } from '../src/client/settings.ts'
+import { DEFAULT_API_BASE, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '../src/adapter.ts'
+import { DEFAULT_TRANSPORT_MAX_RETRIES } from '../src/transport-retry.ts'
 
 const {
   accountIssues,
   advancedGroupInvalid,
   advancedOverriddenCount,
+  FIELD_DEFAULTS,
   invalidGroups,
   modelsGroupInvalid,
   modelsOverriddenCount,
@@ -161,4 +164,13 @@ test('accountIssues: matches the row dots — a rejected key is severe, a cooldo
   assert.deepEqual(accountIssues([undefined, { mark: '', cooldownUntil: 0 }]), { count: 0, severe: false })
   assert.deepEqual(accountIssues([{ mark: '', cooldownUntil: 1 }, { mark: 'rate-limit', cooldownUntil: 0 }]), { count: 2, severe: false })
   assert.deepEqual(accountIssues([{ mark: 'invalid-credential', cooldownUntil: 0 }, { mark: '', cooldownUntil: 0 }]), { count: 1, severe: true })
+})
+
+test('FIELD_DEFAULTS: the empty-field placeholders mirror the Host defaults', () => {
+  // The client cannot import the adapter, so the placeholders are literals;
+  // this pins each to the constant it stands for.
+  assert.equal(FIELD_DEFAULTS.apiBase, DEFAULT_API_BASE)
+  assert.equal(FIELD_DEFAULTS.requestTimeoutSeconds, String(DEFAULT_REQUEST_TIMEOUT_MS / 1000))
+  assert.equal(FIELD_DEFAULTS.streamIdleTimeoutSeconds, String(DEFAULT_STREAM_IDLE_TIMEOUT_MS / 1000))
+  assert.equal(FIELD_DEFAULTS.transportMaxRetries, String(DEFAULT_TRANSPORT_MAX_RETRIES))
 })

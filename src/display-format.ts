@@ -75,6 +75,15 @@ export function formatResetAt(ms: number): string {
   return ms <= 0 ? '' : new Date(ms).toLocaleString()
 }
 
+/**
+ * {@link formatResetAt} without the year and seconds ("10/21 18:41"): the
+ * settings page shows several of these per card, and a reset moment never
+ * needs seconds. Empty for an unknown time, like the long form.
+ */
+export function formatResetAtShort(ms: number): string {
+  return ms <= 0 ? '' : new Date(ms).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 /** 只有官方汇总与订阅共同确认同一起点，才展示完整账期；旧宿主和部分响应保持未知。 */
 export function formatUsageBillingPeriod(usageStart: number | undefined, planStart: number | undefined, planEnd: number | undefined): string {
   if (usageStart === undefined || planStart !== usageStart || planEnd === undefined || usageStart <= 0 || planEnd <= usageStart) return ''

@@ -40,7 +40,7 @@ import { loginHint, loginStateForTarget } from './login.ts'
 import { allowlistedModels, buildModelSelectOptions, catalogIsReady, groupModelSelectOptions, staleModelIds, tierHeadingFor, toggleModelSelection } from './model-select.ts'
 import type { UsagePageState } from './usage.ts'
 import { usageCardState } from './usage.ts'
-import { compactCountTitle, formatCompactCount, formatMoney, formatMoneyExact, formatResetAt, formatSuccessRate, formatTokensCompact, windowRatio, formatUsageBillingPeriod } from '../display-format.ts'
+import { compactCountTitle, formatCompactCount, formatMoney, formatMoneyExact, formatResetAtShort, formatSuccessRate, formatTokensCompact, windowRatio, formatUsageBillingPeriod } from '../display-format.ts'
 import { PLUGIN_RELEASES_URL, PLUGIN_VERSION } from './version.ts'
 import { checkForUpdate, localStorageUpdateStore } from './update.ts'
 import {
@@ -146,6 +146,21 @@ export interface CommandCodeSettingsProps {
   /** Stage the whole per-model context-length map (one entry per row, issue #86). */
   editContextWindowOverrides(next: Record<string, string>): void
 }
+
+/**
+ * The Host-side defaults an empty field falls back to, shown as placeholders so
+ * an empty box reads "300 s" rather than looking broken. They are literals
+ * because the client bundle must not pull in the adapter; `tests/section.test.ts`
+ * pins each one to the constant it mirrors (DEFAULT_API_BASE,
+ * DEFAULT_REQUEST_TIMEOUT_MS / DEFAULT_STREAM_IDLE_TIMEOUT_MS in seconds,
+ * DEFAULT_TRANSPORT_MAX_RETRIES).
+ */
+export const FIELD_DEFAULTS = {
+  apiBase: 'https://api.commandcode.ai',
+  requestTimeoutSeconds: '300',
+  streamIdleTimeoutSeconds: '300',
+  transportMaxRetries: '5',
+} as const
 
 /** The section fields folded into the collapsible Advanced card. */
 type AdvancedField = 'apiBase' | 'requestTimeoutMs' | 'streamIdleTimeoutMs' | 'transportMaxRetries' | 'offloadSeenImagesForCache'
@@ -330,7 +345,8 @@ function Field({
 }: {
   id: string
   label: string
-  hint: string
+  /** Absent when the group's own description already says it (API base). */
+  hint?: string
   state: StagedField
   disabled: boolean
   numeric?: boolean
@@ -340,18 +356,22 @@ function Field({
   /** Renders the output-budget bounds copy (0 = omit, capped by the gateway). */
   output?: boolean
   wide?: boolean
-  /** Unit suffix drawn inside the box (seconds, tokens, …); the label no longer repeats it. */
+  /**
+   * Unit shown beside a number box (seconds, tokens, …), as the General page's
+   * font-size field does; the label no longer repeats it.
+   */
   unit?: string
+  /** What an empty field means — the default it falls back to. */
   placeholder?: string | undefined
   onEdit(text: string): void
   onReset(): void
   t: Translate<SettingsCommandCodeKey>
 }) {
-  const width = wide ? 'cc-rowInputWide' : 'cc-rowInput'
+  const shape = unit === undefined ? (wide ? 'cc-rowInputWide' : 'cc-rowInput') : 'cc-fieldNumber'
   const input = (
     <input
       id={id}
-      className={unit === undefined ? `cc-input ${width}${state.invalid ? ' cc-inputInvalid' : ''}` : 'cc-input'}
+      className={`cc-fieldInput ${shape}${state.invalid ? ' cc-fieldInputInvalid' : ''}`}
       type="text"
       inputMode={decimal ? 'decimal' : numeric ? 'numeric' : undefined}
       aria-invalid={state.invalid || undefined}
@@ -373,9 +393,9 @@ function Field({
       control={
         <>
           {unit === undefined ? input : (
-            <span className={`cc-unitInput ${width}${state.invalid ? ' cc-unitInputInvalid' : ''}`}>
+            <span className="cc-unitField">
               {input}
-              <span className="cc-unit" aria-hidden="true">{unit}</span>
+              <span className="cc-unit">{unit}</span>
             </span>
           )}
           <FieldOverride label={label} state={state} disabled={disabled} t={t} onReset={onReset} />
@@ -487,7 +507,7 @@ function UsageWindow({
 }) {
   const { used, cap, exceeded, resetAt } = limit
   const ratio = windowRatio(used, cap)
-  const reset = formatResetAt(resetAt)
+  const reset = formatResetAtShort(resetAt)
   return (
     <div className="cc-usageWindow">
       <div className="cc-usageWindowHead">
@@ -563,7 +583,9 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
           <UsageStat
             label={t('usageRequests')}
             value={formatCompactCount(report.usage.totalCount)}
-            sub={`${t('usageCompleted')} ${formatCompactCount(report.usage.completedCount)} / ${t('usageFailed')} ${formatCompactCount(report.usage.failedCount)}`}
+            // Success count is already the rate beside it; the sub line keeps
+            // the one number the rate hides, so it fits a quarter-width tile.
+            sub={`${t('usageFailed')} ${formatCompactCount(report.usage.failedCount)}`}
             title={compactCountTitle([
               [t('usageRequests'), report.usage.totalCount],
               [t('usageCompleted'), report.usage.completedCount],
@@ -584,12 +606,17 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
         </div>
       ) : null}
 
+      {/* Balances are secondary to the activity tiles: one quiet line instead
+          of a second, three-column tile row that never lined up with the four
+          above it. An omitted balance reads "—", as before. */}
       {credits !== undefined ? (
-        <div className="cc-usageStats cc-usageStatsBalance">
-          <UsageStat label={t('usageMonthly')} value={credits.monthlyReported === false ? '—' : formatMoney(credits.monthlyCredits)} />
-          <UsageStat label={t('usagePurchased')} value={credits.purchasedReported === false ? '—' : formatMoney(credits.purchasedCredits)} />
-          <UsageStat label={t('usageFree')} value={credits.freeReported === false ? '—' : formatMoney(credits.freeCredits)} />
-        </div>
+        <p className="cc-usageBalances">
+          {[
+            `${t('usageMonthly')} ${credits.monthlyReported === false ? '—' : formatMoney(credits.monthlyCredits)}`,
+            `${t('usagePurchased')} ${credits.purchasedReported === false ? '—' : formatMoney(credits.purchasedCredits)}`,
+            `${t('usageFree')} ${credits.freeReported === false ? '—' : formatMoney(credits.freeCredits)}`,
+          ].join(' · ')}
+        </p>
       ) : null}
 
       {credits?.fiveHour !== undefined || credits?.weekly !== undefined ? (
@@ -613,7 +640,7 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
           ) : null}
           <span className="cc-usageMetaSpacer" />
           {fetchedAt !== undefined ? (
-            <p className="cc-usageUpdated">{t('usageUpdated')} {new Date(fetchedAt).toLocaleTimeString()}</p>
+            <p className="cc-usageUpdated">{t('usageUpdated')} {new Date(fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</p>
           ) : null}
         </div>
       ) : null}
@@ -883,10 +910,20 @@ function FoldableGroup({ id, title, divided = true, expanded, onToggle, badges, 
   )
 }
 
-/** The "N customized" summary badge, absent at zero. */
-function OverriddenBadge({ count, t }: { count: number; t: Translate<SettingsCommandCodeKey> }) {
-  if (count === 0) return null
-  return <span className="cc-badge">{count === 1 ? t('groupOverriddenOne') : t('groupOverriddenMany', { count })}</span>
+/**
+ * A heading's neutral summary as quiet text ("3 allowlisted · 1 customized"),
+ * like the harness's own section captions; only warnings and errors get a
+ * tinted pill, so a pill always means "look here". Empty parts are skipped.
+ */
+function GroupSummary({ parts }: { parts: readonly (string | undefined)[] }) {
+  const text = parts.filter((part): part is string => part !== undefined && part !== '').join(' · ')
+  return text === '' ? null : <span className="cc-groupSummary">{text}</span>
+}
+
+/** "N customized" for a heading summary; undefined at zero. */
+function overriddenText(count: number, t: Translate<SettingsCommandCodeKey>): string | undefined {
+  if (count === 0) return undefined
+  return count === 1 ? t('groupOverriddenOne') : t('groupOverriddenMany', { count })
 }
 
 /**
@@ -936,10 +973,12 @@ function ModelsCard({ state, disabled, t, onEdit, onReset, onSelect, onClear, on
       onToggle={onToggle}
       badges={
         <>
-          <span className="cc-badge">
-            {state.visibleModelsAll ? t('visibleModelsSummaryAll') : t('visibleModelsSummary', { count: state.visibleModels.length })}
-          </span>
-          <OverriddenBadge count={modelsOverriddenCount(state)} t={t} />
+          <GroupSummary
+            parts={[
+              state.visibleModelsAll ? t('visibleModelsSummaryAll') : t('visibleModelsSummary', { count: state.visibleModels.length }),
+              overriddenText(modelsOverriddenCount(state), t),
+            ]}
+          />
           <InvalidBadge show={!expanded && modelsGroupInvalid(state)} t={t} />
         </>
       }
@@ -1028,6 +1067,7 @@ function ContextCard({ state, disabled, t, onEdit, onReset, onOverrides }: FormC
         disabled={disabled}
         context
         unit={t('unitTokens')}
+        placeholder={t('placeholderCatalog')}
         onEdit={(text) => onEdit('contextWindow', text)}
         onReset={() => onReset('contextWindow')}
         t={t}
@@ -1044,6 +1084,7 @@ function ContextCard({ state, disabled, t, onEdit, onReset, onOverrides }: FormC
         numeric
         output
         unit={t('unitTokens')}
+        placeholder={t('placeholderAuto')}
         onEdit={(text) => onEdit('maxOutputTokens', text)}
         onReset={() => onReset('maxOutputTokens')}
         t={t}
@@ -1079,7 +1120,7 @@ function ContextCard({ state, disabled, t, onEdit, onReset, onOverrides }: FormC
         <div className="cc-contextItem" key={row.model}>
           <span className="cc-contextSelect">
             <select
-              className="cc-input cc-contextModel"
+              className="cc-fieldInput cc-contextModel"
               value={row.model}
               aria-label={t('contextOverrideModel')}
               disabled={disabled}
@@ -1096,7 +1137,7 @@ function ContextCard({ state, disabled, t, onEdit, onReset, onOverrides }: FormC
             <span className="cc-contextCaret" aria-hidden="true" />
           </span>
           <input
-            className={`cc-input cc-contextValue${row.invalid ? ' cc-inputInvalid' : ''}`}
+            className={`cc-fieldInput cc-fieldNumber cc-contextValue${row.invalid ? ' cc-fieldInputInvalid' : ''}`}
             type="text"
             aria-label={t('contextOverrideValue')}
             aria-invalid={row.invalid || undefined}
@@ -1131,7 +1172,7 @@ function PrivacyCard({ state, disabled, t, onEdit, onReset, expanded, onToggle }
       title={t('privacyTitle')}
       expanded={expanded}
       onToggle={onToggle}
-      badges={<span className="cc-badge">{stagedSwitch(state.zdr, false) ? t('zdrSummaryOn') : t('zdrSummaryOff')}</span>}
+      badges={<GroupSummary parts={[stagedSwitch(state.zdr, false) ? t('zdrSummaryOn') : t('zdrSummaryOff')]} />}
     >
       <ToggleField
         id="cc-zdr"
@@ -1212,7 +1253,7 @@ function IntegrationsCard({ state, disabled, t, onEdit, onReset, expanded, onTog
       badges={
         <>
           <ServiceStatusBadge view={view} />
-          <span className="cc-badge">{stagedSwitch(state.webSearch, true) ? t('webSearchSummaryOn') : t('webSearchSummaryOff')}</span>
+          <GroupSummary parts={[stagedSwitch(state.webSearch, true) ? t('webSearchSummaryOn') : t('webSearchSummaryOff')]} />
         </>
       }
     >
@@ -1261,7 +1302,7 @@ function AdvancedSection({ state, disabled, t, onEdit, onReset, expanded, onTogg
       onToggle={onToggle}
       badges={
         <>
-          <OverriddenBadge count={advancedOverriddenCount(state)} t={t} />
+          <GroupSummary parts={[overriddenText(advancedOverriddenCount(state), t)]} />
           <InvalidBadge show={!expanded && advancedGroupInvalid(state)} t={t} />
         </>
       }
@@ -1270,10 +1311,10 @@ function AdvancedSection({ state, disabled, t, onEdit, onReset, expanded, onTogg
       <Field
         id="cc-api-base"
         label={t('apiBase')}
-        hint={t('apiBaseHint')}
         state={state.apiBase}
         disabled={disabled}
         wide
+        placeholder={FIELD_DEFAULTS.apiBase}
         onEdit={(text) => onEdit('apiBase', text)}
         onReset={() => onReset('apiBase')}
         t={t}
@@ -1287,6 +1328,7 @@ function AdvancedSection({ state, disabled, t, onEdit, onReset, expanded, onTogg
         numeric
         decimal
         unit={t('unitSeconds')}
+        placeholder={FIELD_DEFAULTS.requestTimeoutSeconds}
         onEdit={(text) => onEdit('requestTimeoutMs', text)}
         onReset={() => onReset('requestTimeoutMs')}
         t={t}
@@ -1300,6 +1342,7 @@ function AdvancedSection({ state, disabled, t, onEdit, onReset, expanded, onTogg
         numeric
         decimal
         unit={t('unitSeconds')}
+        placeholder={FIELD_DEFAULTS.streamIdleTimeoutSeconds}
         onEdit={(text) => onEdit('streamIdleTimeoutMs', text)}
         onReset={() => onReset('streamIdleTimeoutMs')}
         t={t}
@@ -1312,6 +1355,7 @@ function AdvancedSection({ state, disabled, t, onEdit, onReset, expanded, onTogg
         disabled={disabled}
         numeric
         unit={t('unitRetries')}
+        placeholder={FIELD_DEFAULTS.transportMaxRetries}
         onEdit={(text) => onEdit('transportMaxRetries', text)}
         onReset={() => onReset('transportMaxRetries')}
         t={t}
@@ -1642,7 +1686,7 @@ function AccountItem({ row, rows, state, usage, login, disabled, pinned, t, acti
           {entry?.mark === 'invalid-credential' ? <span className="cc-badge cc-badgeError">{t('usageInvalidKey')}</span> : null}
           {entry !== undefined && entry.mark !== 'invalid-credential' && (entry.cooldownUntil > 0 || entry.mark === 'rate-limit') ? (
             <span className="cc-badge cc-badgeWarn">
-              {t('usageCooldown')}{entry.cooldownUntil > 0 ? ` ${formatResetAt(entry.cooldownUntil)}` : ''}
+              {t('usageCooldown')}{entry.cooldownUntil > 0 ? ` ${formatResetAtShort(entry.cooldownUntil)}` : ''}
             </span>
           ) : null}
           <span className="cc-spacer" />
@@ -1673,7 +1717,9 @@ function AccountItem({ row, rows, state, usage, login, disabled, pinned, t, acti
         ) : null}
       </div>
 
-      {credits !== undefined && (credits.fiveHour !== undefined || credits.weekly !== undefined || monthlyReported) ? (
+      {/* Folded, the meters are the card's summary; expanded, the details show
+          the same windows as full bars, so the summary steps aside. */}
+      {!expanded && credits !== undefined && (credits.fiveHour !== undefined || credits.weekly !== undefined || monthlyReported) ? (
         <div className="cc-accountMeters">
           {credits.fiveHour !== undefined ? <MiniMeter label={t('usageFiveHour')} limit={credits.fiveHour} /> : null}
           {credits.weekly !== undefined ? <MiniMeter label={t('usageWeekly')} limit={credits.weekly} /> : null}
@@ -1945,7 +1991,7 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
       onToggle={onToggle}
       badges={
         <>
-          <span className="cc-badge">{rows.length === 1 ? t('accountsSummaryOne') : t('accountsSummaryMany', { count: rows.length })}</span>
+          <GroupSummary parts={[rows.length === 1 ? t('accountsSummaryOne') : t('accountsSummaryMany', { count: rows.length })]} />
           {issues.count > 0 ? (
             <span className={issues.severe ? 'cc-badge cc-badgeError' : 'cc-badge cc-badgeWarn'}>
               {t('accountsSummaryIssues', { count: issues.count })}
