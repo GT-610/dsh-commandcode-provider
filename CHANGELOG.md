@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.15.0] - 2026-10-21
 
 ### Added
 
@@ -39,6 +39,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **余额不足的账号不再在每个请求里被反复重撞（issue #51 仍未关闭的另一半）。** 现场实测（2026-10-21）：账户余额 $0.0874、5 小时与周窗口都未超时时，所有付费模型返回 `400 BAD_REQUEST / "insufficient credits"`，而免费模型仍 200——这证明该拒绝是「模型/余额」事实而非密钥故障，所以 `unavailable` 一直有意不落**账号**标记（否则余额为空的账号连 `:free` 模型都不可用）。但完全不记的代价是：每一次新请求都会重新选中同一个账号并再吃一次 400；在多账号池里当它是回退候选时，用户最终看到的是「自己没选过的那个账号余额不足」的报错（对应反馈者的「选了还有额度的账号却被切到没余额账号」）。现在 `unavailable` 落一条**按「密钥 + 模型」限时的偏好降级**（`markModelUnavailable()`，`MODEL_UNAVAILABLE_TTL_MS` = 5 分钟）：同一模型的后续请求先跳过该账号，其它模型与 `:free` 模型不受影响；全部候选都被标记时退回全量（是降级不是禁用，唯一账号仍会交付）；401 换密钥时清空该密钥的软标记。`accountUsable()`、账号卡片与 `activeAccount()` 均不受影响。用例：`tests/accounts.test.ts` 新增 5 条（按模型跳过、其它模型不受影响、唯一账号仍交付、软标记是偏好不是禁令、按时钟过期），全量 1079 条通过。
 
 - **网关的 `400 JSON node count cannot exceed 32768` 不再落入通用 400 文案（issue #96）。** 这是请求体的**结构**上限，不是 token 上下文超限：报告现场 token 占用仅 22.6%（225,991 / 1,000,000），但 1,436 条消息、61 个 image content part、累计 675 次 tool/call 的请求体已经撞上限；`generateHttpError()` 原先没有分支命中这句，最终落到「请检查模型、套餐和请求设置」的通用文案，上游唯一点名上限的那句话被丢弃。现在 `JSON_NODE_LIMIT_REJECTION` 在上下文溢出分支之后单独接管：中英双语引用网关给出的上限数值，说明「限制的是请求结构，不是 token 长度」，建议新建会话或减少消息与图片；失败码保持 `PROVIDER_HTTP_ERROR`（不重试、不触发压缩、不轮换账号）。文案用「压缩上下文通常不足以降到该上限以内」而非「无效」——压缩会减少消息条数与 content part 数，节点数可能随之下降，只是通常不够。上游原文仍按 `generateHttpError()` 的展示层规则不回显，只引用其上限数字。用例：`tests/adapter.test.ts` 用 issue 里的双层转义真实报文回放，断言失败码、上限 32768、双语「通常不足」且只发 1 次请求。
+
+### Verification
+
+- 锁文件隔离校验（`npm ci --dry-run`）退出码 0、100 包；`npm run typecheck` 退出码 0；`npm test` **1111／1111**；`npm run build` 两段通过、`lib/` 已重建（含 `x-command-code-version: 1.86.3` 与 0.15.0 版本号）。
+- `npm run test:engine` **2/2**（`0.2.0-rc.2` 与 `0.2.1-rc.2`，末行 `engine-load smoke passed on all 2 declared-compatible engines`）；`npm run test:install` **2/2**（pnpm 10.34.5，`engine matrix verified: 0.2.0-rc.2, 0.2.1-rc.2`）。
+- `npm run test:pack` 通过（16 个文件，版本 0.15.0）；`npm pack --dry-run --ignore-scripts` 16 个文件、2.5 MB／解包 3.6 MB。
+- **证据边界**：未做真实账号登录、付费生成、服务端协议验证与浏览器渲染；`test:engine` 与 `test:install` 的网络与凭据为合成依赖；上游同步结论来自产物级静态比对（官方 changelog 无 `1.85.0`–`1.86.3` 条目），审计 `incomplete` 的 4 条 error 为已知的目录侧定价别名缺失。
 
 ## [0.14.5] - 2026-10-21
 
