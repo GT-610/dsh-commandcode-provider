@@ -521,7 +521,8 @@ export const PANEL_AUTO_REFRESH_MS = 120_000
 /** The narrow face of `CommandCodeUsageController` this module drives. */
 export interface RefreshSource {
   state(): UsagePageState
-  refresh(): Promise<void>
+  /** `auto` marks a refresh nobody asked for; see `CommandCodeUsageController.refresh`. */
+  refresh(options?: { auto?: boolean }): Promise<void>
 }
 
 /** Timer seam: injectable so tests never wait on real time. */
@@ -568,7 +569,9 @@ export function startPanelAutoRefresh(
   const ticket = ++ticketSeq
   const tick = (): void => {
     if (activeTicket !== ticket) return
-    if (isConfigured()) void usage.refresh()
+    // `auto`: nobody clicked anything, so a result fetched a moment ago (by the
+    // settings page's card, or by the tick that just ran) is the same answer.
+    if (isConfigured()) void usage.refresh({ auto: true })
     handle = timer.set(tick, PANEL_AUTO_REFRESH_MS)
   }
 
@@ -576,7 +579,9 @@ export function startPanelAutoRefresh(
     activeTicket = ticket
     handle = timer.set(tick, PANEL_AUTO_REFRESH_MS)
     // First paint: refresh immediately so the row is never blank on arrival.
-    if (isConfigured()) void usage.refresh()
+    // `auto` for the same reason: the account card is very likely mounting in
+    // the same tick and asking the identical question.
+    if (isConfigured()) void usage.refresh({ auto: true })
   }
 
   let stopped = false

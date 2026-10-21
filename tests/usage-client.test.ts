@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import {
   CommandCodeUsageController,
   usageCardState,
+  USAGE_AUTO_REFRESH_COALESCE_MS,
   compactCountTitle,
   formatCompactCount,
   formatMoney,
@@ -195,6 +196,41 @@ test('formatResetAt renders a local time and empty for unset', () => {
   assert.equal(formatResetAt(0), '')
   assert.equal(formatResetAt(-5), '')
   assert.notEqual(formatResetAt(1_800_000_000_000), '')
+})
+
+test('自动刷新会合并刚刚读到的结果，显式刷新永远重新去读', async (t) => {
+  // 面板与账户卡片会各自在首屏自动发起一次读取（重挂载、重渲染也会再触发），
+  // 而一份报告是四次上游调用。同一账号的同一份答案没有必要付两次钱 —— 但这条
+  // 合并只属于「没人点过任何东西」的路径：用户按下刷新、保存配置、换凭据之后，
+  // 读到的必须是新的。
+  const originalNow = Date.now
+  let now = originalNow()
+  Date.now = () => now
+  t.after(() => { Date.now = originalNow })
+  let calls = 0
+  const controller = new CommandCodeUsageController(makeRemote(async () => {
+    calls++
+    return { ok: true, value: makeReport() }
+  }))
+  await controller.refresh({ auto: true })
+  assert.equal(calls, 1)
+  const firstFetchedAt = controller.state().fetchedAt
+  assert.equal(typeof firstFetchedAt, 'number')
+
+  // 同一毫秒窗口内的第二次自动读取：合并，不再发起请求，时间戳也不动。
+  await controller.refresh({ auto: true })
+  assert.equal(calls, 1, '自动路径应合并刚刚读到的结果')
+  assert.equal(controller.state().fetchedAt, firstFetchedAt, '合并不能伪造新的读取时间')
+
+  // 显式刷新不受窗口限制：用户要求的就是新数字。
+  await controller.refresh()
+  assert.equal(calls, 2, '显式刷新必须真的去读')
+
+  // 窗口过去之后，自动路径也会重新读取。
+  now += USAGE_AUTO_REFRESH_COALESCE_MS + 1
+  await controller.refresh({ auto: true })
+  assert.equal(calls, 3)
+  controller.dispose()
 })
 
 test('usage card fetches Host facts without browser credentials and keeps manual retry available', async () => {

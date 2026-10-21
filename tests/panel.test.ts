@@ -616,6 +616,26 @@ test('two mounted surfaces share one loop and one fetch', () => {
   resetPanelAutoRefresh()
 })
 
+test('面板的自动刷新走 auto 路径，显式刷新不受影响', () => {
+  // 面板首屏与后台 tick 都不是用户点的：它们和账户卡片问的是同一个问题，
+  // 所以必须走可以合并的自动路径。按钮/保存那条路径由 startPanelAutoRefresh
+  // 之外调用 refresh()，不接受任何合并。
+  resetPanelAutoRefresh()
+  const timer = fakeTimer()
+  const modes: Array<{ auto?: boolean } | undefined> = []
+  const source = {
+    state: () => usage(),
+    refresh: async (options?: { auto?: boolean }) => {
+      modes.push(options)
+    },
+  }
+  const stop = startPanelAutoRefresh(source, () => true, timer)
+  timer.fire()
+  assert.deepEqual(modes, [{ auto: true }, { auto: true }], '首屏与 tick 都必须标记为自动')
+  stop()
+  resetPanelAutoRefresh()
+})
+
 test('omitted purchased and free balances remain unknown while explicit zero is shown', () => {
   const view = buildPanelView({ apiKeyConfigured: false, usage: usage({ report: { accounts: [entry({ report: {
     credits: { ...CREDITS, purchasedCredits: 0, freeCredits: 0, purchasedReported: true, freeReported: false },
