@@ -7516,6 +7516,51 @@ test('getUsage() 固定组织范围并等订阅账期，再读取官方汇总', 
   assert.equal(report.usage?.totalCount, 7)
 })
 
+test('用量卡片与选择器共享同一份账户事实，但用量汇总必须每次重读', async () => {
+  // 设置卡片的账户区与选择器的套餐过滤读的是同一批端点、同一个账号：whoami 一次，
+  // 再并行 credits + subscriptions 一次。各自独立读等于同一份答案付两遍钱，而卡片
+  // 还在定时刷新，于是选择器反复为它早就有的行付出往返。
+  //
+  // 但 usage/summary 不同：那是用户正盯着的数字，卡片旁边还写着读取时间，绝不能
+  // 拿一次早先的响应回放。
+  const calls: Array<{ path: string; since: string | null }> = []
+  let usageReads = 0
+  const adapter = makeAdapter({ fetchImpl: (async (input) => {
+    const url = new URL(String(input))
+    calls.push({ path: url.pathname, since: url.searchParams.get('since') })
+    if (url.pathname === '/alpha/whoami') return Response.json({ user: { id: 'u1' }, org: { id: 'org-1' } })
+    if (url.pathname === '/alpha/billing/subscriptions') {
+      return Response.json({ data: { planId: 'individual-go', status: 'active', currentPeriodStart: 1000 } })
+    }
+    if (url.pathname === '/alpha/billing/credits') {
+      return Response.json({ credits: { monthlyCredits: 5, purchasedCredits: 0, freeCredits: 0 } })
+    }
+    assert.equal(url.pathname, '/alpha/usage/summary')
+    // 每次都得是一次真实读取：数字变化必须能被看见。
+    return Response.json({ totalCount: ++usageReads })
+  }) as typeof fetch })
+  const first = await adapter.getUsage('user_test_key')
+  assert.equal(first.usage?.totalCount, 1)
+  assert.equal(first.plan?.name, 'Go')
+  const afterCard = calls.length
+  assert.equal(afterCard, 4)
+  assert.deepEqual(calls.map((call) => call.path).sort(), [
+    '/alpha/billing/credits', '/alpha/billing/subscriptions', '/alpha/usage/summary', '/alpha/whoami',
+  ])
+
+  // 选择器的套餐过滤：卡片刚读过的身份与订阅事实直接复用。
+  await adapter.listModels('commandcode')
+  const added = calls.slice(afterCard).map((call) => call.path)
+  assert.deepEqual(added, ['/provider/v1/models', '/alpha/billing/credits'],
+    'whoami 与 subscriptions 必须复用卡片那一份；credits 的 URL 带不带 orgId 取决于调用方，不是同一份记录')
+
+  // 卡片再刷新：身份与套餐事实可以复用，用量汇总必须重新发出。
+  const second = await adapter.getUsage('user_test_key')
+  assert.equal(second.usage?.totalCount, 2, '用量汇总不能回放上一次的响应')
+  const usageCalls = calls.filter((call) => call.path === '/alpha/usage/summary')
+  assert.equal(usageCalls.length, 2)
+})
+
 test('getUsage() 个人账号使用毫秒账期，不附带组织参数或重算自然月', async () => {
   const start = Date.parse('2026-09-19T10:15:00Z')
   const adapter = makeAdapter({ fetchImpl: (async input => {
