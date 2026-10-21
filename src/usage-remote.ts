@@ -28,6 +28,8 @@ import type { CommandCodeLoginStatus } from './login-wire.ts'
 import { ENROLLMENT_DESCRIPTORS, type EnrollmentAction, type EnrollmentInput, type EnrollmentPage, type EnrollmentState } from './enrollment-wire.ts'
 import type { AccountEnrollmentManager } from './enrollment.ts'
 import { ANALYTICS_DESCRIPTOR, type AnalyticsQuery, type AnalyticsReport } from './analytics-wire.ts'
+import { PROBE_DESCRIPTOR } from './service-probe-wire.ts'
+import type { CommandCodeProbeResult } from './service-probe-wire.ts'
 
 /**
  * The browser-login face the usage service exposes (`commandcode/login*`).
@@ -72,6 +74,13 @@ export interface CommandCodeUsageDeps<C extends CommandCodeConnectionOptions = C
   login?: LoginFlowFacade
   enrollment?: AccountEnrollmentManager
   analytics?: (query: AnalyticsQuery, signal?: AbortSignal) => Promise<AnalyticsReport>
+  /**
+   * Host-side connectivity probe for the settings page's service-status row
+   * (wired by the plugin entry against the live API base). Absent, the
+   * `commandcode/probe` endpoint rejects and the row shows the local
+   * connectivity as unknown instead of inventing a result.
+   */
+  probe?: () => Promise<CommandCodeProbeResult>
 }
 
 /**
@@ -147,6 +156,18 @@ export class CommandCodeUsageService<C extends CommandCodeConnectionOptions = Co
    */
   async prices(): Promise<CommandCodePriceTable> {
     return (this.deps.prices ?? modelPriceTable)()
+  }
+
+  /**
+   * One live connectivity probe of the configured API base, run on this Host.
+   * The status page's own data lags by design (Upptime publishes on change or
+   * once a day), so this is the only real-time half of the status row. The
+   * plugin entry wires the probe; a programmatic setup without it gets an
+   * explicit failure, which the row renders as unknown.
+   */
+  async probe(): Promise<CommandCodeProbeResult> {
+    if (this.deps.probe === undefined) throw new Error('宿主未提供连通性探测')
+    return this.deps.probe()
   }
 
   async analytics(query: AnalyticsQuery): Promise<AnalyticsReport> {
@@ -252,7 +273,7 @@ export function applyUsageRemote<C extends CommandCodeConnectionOptions>(
     // Client mount) 1:1.
     const unregister = registry.register({
       ...USAGE_HOST_CONTRIBUTION,
-      invocations: [...USAGE_HOST_CONTRIBUTION.invocations, MODELS_DESCRIPTOR, PRICES_DESCRIPTOR, ANALYTICS_DESCRIPTOR, ...LOGIN_HOST_CONTRIBUTION.invocations, ...ENROLLMENT_DESCRIPTORS],
+      invocations: [...USAGE_HOST_CONTRIBUTION.invocations, MODELS_DESCRIPTOR, PRICES_DESCRIPTOR, ANALYTICS_DESCRIPTOR, PROBE_DESCRIPTOR, ...LOGIN_HOST_CONTRIBUTION.invocations, ...ENROLLMENT_DESCRIPTORS],
     })
     // The registry's own effect would outlive this fiber; withdraw the
     // contribution when the plugin unloads.

@@ -4,13 +4,15 @@
  * subscription-plan labels, deals, and hourly (peak/off-peak) pricing.
  *
  * Everything here is synced from official sources — the command-code CLI
- * bundle's model table (`dist/cli.mjs`, re-verified at command-code@1.86.1), the
+ * bundle's model table (`dist/cli.mjs`, re-verified at command-code@1.86.3), the
  * live model catalog (`GET /provider/v1/models?view=client`, the authority for
  * capability fields since 1.82.4), and the official plan/pricing/model docs; see
  * the dsh-commandcode-upstream skill for the extraction procedures. The
  * 2026-10-21 sync moves the CLI from 1.84.0 to 1.86.1 and picks up the Ornith
  * 1.5 122B launch pair in the catalog, the ZDR exclusion-set prune and the
- * MiniMax M3.1 Flash promo extension. Keeping the snapshot in its own module
+ * MiniMax M3.1 Flash promo extension. The follow-up check later that day moves
+ * the pinned constant to 1.86.3 (request header only): 1.86.2/1.86.3 leave
+ * every snapshot here untouched, so no data in this file moved for them. Keeping the snapshot in its own module
  * confines those frequent sync diffs here: src/adapter.ts holds only the stable
  * wire/runtime logic. The read helpers live here too, for the same reason.
  *
@@ -23,7 +25,7 @@ import { PLAN_LABELS, PLAN_ORDER } from './plan-tiers.ts'
 export { PLAN_LABELS, PLAN_ORDER } from './plan-tiers.ts'
 
 export const KNOWN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
-  // Re-verified against the authoritative command-code@1.86.1 model table. From
+  // Re-verified against the authoritative command-code@1.86.3 model table. From
   // 1.82.4 the CLI no longer keeps this map bundled: `getSupportedEfforts()`
   // resolves it through the model catalog (`reasoningEfforts`), served live at
   // `GET /provider/v1/models?view=client` and falling back to an embedded
@@ -815,7 +817,7 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * `/docs/plans/max` and `/docs/resources/pricing-limits`). Each plan's model
  * list is a superset of the one below it: Go ⊂ GOAT ⊂ Pro ⊂ Provider/Max.
  * Models absent from every plan list (Claude Opus/Fable, Fugu Ultra) are
- * Provider-tier. Re-verified at command-code@1.86.1 (2026-10-21) against the
+ * Provider-tier. Re-verified at command-code@1.86.3 (2026-10-21) against the
  * live `?view=client` catalog: 104 ids, still a strict superset chain. Mistral
  * Large 4
  * (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair

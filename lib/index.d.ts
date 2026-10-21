@@ -61,7 +61,7 @@ type CommandCodeProtocol = 'cli' | 'openai' | 'messages';
 declare const DEFAULT_MAX_OUTPUT_TOKENS = 131072;
 //#endregion
 //#region src/adapter.d.ts
-declare const COMMAND_CODE_CLI_VERSION = "1.86.1";
+declare const COMMAND_CODE_CLI_VERSION = "1.86.3";
 declare const DEFAULT_API_BASE = "https://api.commandcode.ai";
 /**
  * The output budget this bundle asks for, and the ceiling it will never exceed.
@@ -798,6 +798,11 @@ declare class CommandCodeAccountPool {
   private states;
   /** 当前网关与密钥的显式探测时间，限制失败探测的频率。 */
   private explicitProbes;
+  /**
+   * 模型级 `unavailable` 软标记：`key\0model` → 过期时刻（毫秒）。
+   * 只影响选择顺序，从不参与 {@link accountUsable}，所以免费模型仍可用。
+   */
+  private modelUnavailable;
   private scopedStates;
   constructor(deps: CommandCodeAccountPoolDeps);
   /** 每个调用持有自己的定义和探测，只有同网关的健康事实共享；不临时改写全局依赖。 */
@@ -874,6 +879,30 @@ declare class CommandCodeAccountPool {
    * keeps its window unknown on purpose, so a probe can still find out.
    */
   markRejected(apiKey: string, rejection: AccountRejection, resetAtMs?: number): void;
+  /**
+   * Record a model-scoped `unavailable` rejection (no credits, or a model
+   * outside this account's plan) as a SHORT-LIVED PREFERENCE demotion.
+   *
+   * 职责：让同一模型的后续请求先跳过这个账号，而不是每一步都重撞一次
+   * `400 insufficient credits`；同时刻意不写进 `states`，所以
+   * {@link accountUsable} 与 {@link activeAccount} 都不受影响——余额为空的
+   * 账号仍然能服务 `:free` 模型，账号卡片也不会把它标成"不可用"。
+   *
+   * 为什么按时限而非永久：余额/套餐是可以不换密钥就改变的事实（充值、升级），
+   * 而进程内没有任何事件能通知这改变，所以只能靠时钟自行恢复。
+   */
+  markModelUnavailable(apiKey: string, model: string): void;
+  /** Drop every model-scoped mark for one key (a new credential invalidates them). */
+  private clearModelUnavailable;
+  /**
+   * The candidates for THIS model, in preference order: accounts without a live
+   * model-scoped mark first, everything else after them.
+   *
+   * 为什么要"排后"而不是"剔除"：软标记只是偏好（见
+   * {@link markModelUnavailable}）。全部候选都被标记时必须退回全量，否则唯一
+   * 账号的池子会变成"没有可用账号"，把一次余额不足误报成额度耗尽。
+   */
+  private withoutModelUnavailable;
   /**
    * One account's key: literal → credential seam → auth file (default slot).
    *
@@ -1136,7 +1165,7 @@ declare const KNOWN_THINKING_MODELS: ReadonlySet<string>;
  * `/docs/plans/max` and `/docs/resources/pricing-limits`). Each plan's model
  * list is a superset of the one below it: Go ⊂ GOAT ⊂ Pro ⊂ Provider/Max.
  * Models absent from every plan list (Claude Opus/Fable, Fugu Ultra) are
- * Provider-tier. Re-verified at command-code@1.86.1 (2026-10-21) against the
+ * Provider-tier. Re-verified at command-code@1.86.3 (2026-10-21) against the
  * live `?view=client` catalog: 104 ids, still a strict superset chain. Mistral
  * Large 4
  * (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair
@@ -1856,6 +1885,20 @@ interface AnalyticsReport {
   monthlyEstimate: number | null;
 }
 //#endregion
+//#region src/service-probe-wire.d.ts
+/** How the probe ended; the browser maps each value to localized copy. */
+type ProbeOutcome = 'ok' | 'http-error' | 'timeout' | 'unreachable';
+/** The probe facts the Host returns; the browser owns every string. */
+interface CommandCodeProbeResult {
+  outcome: ProbeOutcome;
+  /** HTTP status when a response arrived; 0 when it did not. */
+  status: number;
+  /** Round-trip time in milliseconds; 0 when no response arrived. */
+  latencyMs: number;
+  /** When the Host finished the probe (epoch ms, Host clock). */
+  checkedAt: number;
+}
+//#endregion
 //#region src/usage-remote.d.ts
 /**
  * The browser-login face the usage service exposes (`commandcode/login*`).
@@ -1899,6 +1942,13 @@ interface CommandCodeUsageDeps<C extends CommandCodeConnectionOptions = CommandC
   login?: LoginFlowFacade;
   enrollment?: AccountEnrollmentManager;
   analytics?: (query: AnalyticsQuery, signal?: AbortSignal) => Promise<AnalyticsReport>;
+  /**
+   * Host-side connectivity probe for the settings page's service-status row
+   * (wired by the plugin entry against the live API base). Absent, the
+   * `commandcode/probe` endpoint rejects and the row shows the local
+   * connectivity as unknown instead of inventing a result.
+   */
+  probe?: () => Promise<CommandCodeProbeResult>;
 }
 /**
  * The Remote receiver: a Cordis service the Gateway resolves by key
@@ -1931,6 +1981,14 @@ declare class CommandCodeUsageService<C extends CommandCodeConnectionOptions = C
    * open page without a rebuild.
    */
   prices(): Promise<CommandCodePriceTable>;
+  /**
+   * One live connectivity probe of the configured API base, run on this Host.
+   * The status page's own data lags by design (Upptime publishes on change or
+   * once a day), so this is the only real-time half of the status row. The
+   * plugin entry wires the probe; a programmatic setup without it gets an
+   * explicit failure, which the row renders as unknown.
+   */
+  probe(): Promise<CommandCodeProbeResult>;
   analytics(query: AnalyticsQuery): Promise<AnalyticsReport>;
   /**
    * Start (or rejoin) a browser-login attempt and return its fresh status —

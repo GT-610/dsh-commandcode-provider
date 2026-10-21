@@ -25,3 +25,13 @@ export function Menu({ items = [], footer = [], children }) {
     ))
   return createElement('span', { 'data-cc-menu': true }, labels, children)
 }
+
+/** Render the semantic state so a rendered tree can assert the dot it got. */
+export function StateDot({ state, size, className }) {
+  return createElement('span', {
+    'data-cc-state-dot': state,
+    className,
+    'aria-hidden': 'true',
+    ...(size === undefined ? {} : { 'data-cc-size': String(size) }),
+  })
+}

@@ -29,6 +29,7 @@ import { CommandCodeUsageController, type UsagePageState, type UsageRemote } fro
 import { CommandCodePricesController, type SessionCostPricesState } from './prices.ts'
 import { CommandCodeLoginController, type LoginPageState, type LoginRemote } from './login.ts'
 import { USAGE_REMOTE_CONTRIBUTION, MODELS_REMOTE_CONTRIBUTION, PRICES_REMOTE_CONTRIBUTION } from '../usage-wire.ts'
+import { PROBE_REMOTE_CONTRIBUTION } from '../service-probe-wire.ts'
 import { LOGIN_REMOTE_CONTRIBUTION } from '../login-wire.ts'
 import { ENROLLMENT_REMOTE_CONTRIBUTION } from '../enrollment-wire.ts'
 import { AccountEnrollmentController, type EnrollmentRemote } from './enrollment.ts'
@@ -229,6 +230,7 @@ function applyClientSurfaces(
       ...MODELS_REMOTE_CONTRIBUTION.descriptors,
       ...PRICES_REMOTE_CONTRIBUTION.descriptors,
       ...ANALYTICS_REMOTE_CONTRIBUTION.descriptors,
+      ...PROBE_REMOTE_CONTRIBUTION.descriptors,
       ...LOGIN_REMOTE_CONTRIBUTION.descriptors,
       ...ENROLLMENT_REMOTE_CONTRIBUTION.descriptors,
     ],
@@ -378,6 +380,16 @@ function applyClientSurfaces(
     return ok
   }
   const injected = () => ({
+    // The status row's live half: one probe of the configured API base, run
+    // Host-side. A Host older than the probe endpoint mounts no such method, so
+    // the row must render "unknown" rather than throw (see section.tsx).
+    probeService: () => {
+      const namespace = usageNamespace
+      if (typeof namespace?.probe !== 'function') {
+        return Promise.resolve({ ok: false as const, error: { message: '宿主未提供连通性探测' } })
+      }
+      return namespace.probe()
+    },
     createEnrollment: () => new AccountEnrollmentController(() => {
       if (!usageNamespace?.enrollmentBegin) throw new Error('宿主不支持账号开通，请更新插件')
       return usageNamespace as EnrollmentRemote

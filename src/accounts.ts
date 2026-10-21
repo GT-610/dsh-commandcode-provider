@@ -38,6 +38,31 @@ export const RETRY_MAX_DELAY_MS = 900_000
  */
 const EXPLICIT_ACCOUNT_PROBE_INTERVAL_MS = 60_000
 
+/**
+ * How long a model-scoped `unavailable` rejection demotes an account.
+ *
+ * `unavailable` (no credits, or a model outside this account's plan) is a fact
+ * about the balance or the model, NOT about the key — a credits-empty account
+ * still serves `:free` models, which is why it must never become a permanent
+ * account mark. But not remembering it at all made EVERY later request pick
+ * the same doomed account first: one wasted round trip per step, and in a pool
+ * where that account was the fallback, the user's error became "insufficient
+ * credits" from an account they never chose (issue #51's remaining half,
+ * live-probed 2026-10-21: a $0.0874 balance rejects every paid model with
+ * `400 insufficient credits` while free models still answer 200).
+ *
+ * So the mark is a PREFERENCE, not a ban, and it is scoped per model to keep
+ * the free-model escape hatch intact. Five minutes is long enough to stop a
+ * single turn's steps from re-hitting the same rejection and short enough that
+ * a top-up takes effect without a restart.
+ */
+const MODEL_UNAVAILABLE_TTL_MS = 5 * 60_000
+
+/** One model-scoped soft mark's Map key (NUL keeps the two halves unambiguous). */
+function modelUnavailableKey(apiKey: string, model: string): string {
+  return `${apiKey}\u0000${model}`
+}
+
 /** One extra account's raw configuration (composition config or settings). */
 export interface CommandCodeAccountConfig {
   /** Display label shown in the usage dashboard and settings page. */
@@ -256,7 +281,12 @@ export class CommandCodeAccountPool {
   private states = new Map<string, CommandCodeAccountState>()
   /** 当前网关与密钥的显式探测时间，限制失败探测的频率。 */
   private explicitProbes = new Map<string, number>()
-  private scopedStates = new Map<string, { states: Map<string, CommandCodeAccountState>; probes: Map<string, number> }>()
+  /**
+   * 模型级 `unavailable` 软标记：`key\0model` → 过期时刻（毫秒）。
+   * 只影响选择顺序，从不参与 {@link accountUsable}，所以免费模型仍可用。
+   */
+  private modelUnavailable = new Map<string, number>()
+  private scopedStates = new Map<string, { states: Map<string, CommandCodeAccountState>; probes: Map<string, number>; modelUnavailable: Map<string, number> }>()
   constructor(private readonly deps: CommandCodeAccountPoolDeps) {}
 
   /** 每个调用持有自己的定义和探测，只有同网关的健康事实共享；不临时改写全局依赖。 */
@@ -264,7 +294,7 @@ export class CommandCodeAccountPool {
     const selection = captureAccountSelection(context)
     let shared = this.scopedStates.get(context.apiBase)
     if (shared === undefined) {
-      shared = { states: new Map(), probes: new Map() }
+      shared = { states: new Map(), probes: new Map(), modelUnavailable: new Map() }
       this.scopedStates.set(context.apiBase, shared)
     }
     const scoped = new CommandCodeAccountPool({
@@ -276,6 +306,7 @@ export class CommandCodeAccountPool {
     })
     scoped.states = shared.states
     scoped.explicitProbes = shared.probes
+    scoped.modelUnavailable = shared.modelUnavailable
     scoped.scopedStates = this.scopedStates
     return scoped
   }
@@ -349,11 +380,15 @@ export class CommandCodeAccountPool {
       if (selectActiveAccount(accounts, preferred) !== undefined) return undefined
       throw allAccountsUnusable(accounts)
     }
-    const routed = selectAccountForModel(available, options?.model ?? '', this.deps.modelAccountRules?.())
+    const model = options?.model ?? ''
+    // 模型级软降级：刚被余额/套餐拒绝的账号排到选择顺序之后，但从不剔除出池
+    // —— 免费模型与其它模型仍可用，且没有更好的候选时它仍是唯一诚实的答案。
+    const serveable = this.withoutModelUnavailable(available, model)
+    const routed = selectAccountForModel(serveable, model, this.deps.modelAccountRules?.())
     if (routed !== undefined) return this.pick(routed)
-    const chosen = selectActiveAccount(available, preferred)
+    const chosen = selectActiveAccount(serveable, preferred)
     if (chosen !== undefined) {
-      const revived = await this.reviveExplicit(available, options?.model ?? '', preferred, chosen)
+      const revived = await this.reviveExplicit(available, model, preferred, chosen)
       return this.pick(revived ?? chosen)
     }
 
@@ -438,6 +473,8 @@ export class CommandCodeAccountPool {
   markRejected(apiKey: string, rejection: AccountRejection, resetAtMs?: number): void {
     if (rejection === 'invalid-credential') {
       this.states.set(apiKey, { kind: 'disabled', cause: 'auth', reason: 'invalid API key (401)', until: 0 })
+      // 凭据换了，模型级结论（余额/套餐）随之作废。
+      this.clearModelUnavailable(apiKey)
     } else if (rejection === 'throttled') {
       // Deliberately NOT a cooldown from `resetAtMs`: a throttle carries no
       // window fact, and the `unknown` mark is what keeps the key eligible for
@@ -448,6 +485,57 @@ export class CommandCodeAccountPool {
     } else {
       this.states.set(apiKey, { kind: 'unknown', cause: 'window', reason: 'usage window exhausted (429)', until: 0 })
     }
+  }
+
+  /**
+   * Record a model-scoped `unavailable` rejection (no credits, or a model
+   * outside this account's plan) as a SHORT-LIVED PREFERENCE demotion.
+   *
+   * 职责：让同一模型的后续请求先跳过这个账号，而不是每一步都重撞一次
+   * `400 insufficient credits`；同时刻意不写进 `states`，所以
+   * {@link accountUsable} 与 {@link activeAccount} 都不受影响——余额为空的
+   * 账号仍然能服务 `:free` 模型，账号卡片也不会把它标成"不可用"。
+   *
+   * 为什么按时限而非永久：余额/套餐是可以不换密钥就改变的事实（充值、升级），
+   * 而进程内没有任何事件能通知这改变，所以只能靠时钟自行恢复。
+   */
+  markModelUnavailable(apiKey: string, model: string): void {
+    if (model === '') return
+    const now = this.now()
+    this.modelUnavailable.set(modelUnavailableKey(apiKey, model), now + MODEL_UNAVAILABLE_TTL_MS)
+    // 顺手清掉过期项：条目数是「账号 × 模型」，不该随会话无限增长。
+    for (const [key, until] of this.modelUnavailable) {
+      if (until <= now) this.modelUnavailable.delete(key)
+    }
+  }
+
+  /** Drop every model-scoped mark for one key (a new credential invalidates them). */
+  private clearModelUnavailable(apiKey: string): void {
+    const prefix = `${apiKey}\u0000`
+    for (const key of this.modelUnavailable.keys()) {
+      if (key.startsWith(prefix)) this.modelUnavailable.delete(key)
+    }
+  }
+
+  /**
+   * The candidates for THIS model, in preference order: accounts without a live
+   * model-scoped mark first, everything else after them.
+   *
+   * 为什么要"排后"而不是"剔除"：软标记只是偏好（见
+   * {@link markModelUnavailable}）。全部候选都被标记时必须退回全量，否则唯一
+   * 账号的池子会变成"没有可用账号"，把一次余额不足误报成额度耗尽。
+   */
+  private withoutModelUnavailable(
+    accounts: readonly ResolvedAccount[],
+    model: string,
+  ): readonly ResolvedAccount[] {
+    if (model === '') return accounts
+    const now = this.now()
+    const healthy = accounts.filter((account) => {
+      const until = this.modelUnavailable.get(modelUnavailableKey(account.key, model))
+      return until === undefined || until <= now
+    })
+    return healthy.length > 0 ? healthy : accounts
   }
 
   /**
