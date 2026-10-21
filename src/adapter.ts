@@ -115,6 +115,17 @@ const MODELS_TIMEOUT_MS = 10_000
 /** How long the picker's plan-filter billing facts stay cached before refetching. */
 export const BILLING_ACCESS_TTL_MS = 5 * 60_000
 /**
+ * How long the raw account facts captured by one usage-report run stay usable
+ * for the picker's advisory plan filter.
+ *
+ * This is much shorter than {@link BILLING_ACCESS_TTL_MS} because it only ever
+ * removes a DUPLICATE read: the picker and the settings card ask the same three
+ * endpoints about the same key, and whichever ran last already paid for them.
+ * Anything older than this window is simply fetched again — the filter is
+ * fail-open advisory data, so a miss costs one round trip and nothing else.
+ */
+const ACCOUNT_FACTS_TTL_MS = 30_000
+/**
  * How long a learned CLI-only protocol preference stays cached per account.
  * After this TTL a request may probe Provider API again, so an upgraded Go
  * account can recover without a restart.
@@ -2393,6 +2404,25 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
   // transience is intentional, persistence would serve stale tiers).
   private readonly billingAccess = new Map<string, { value: CommandCodeBillingAccess | undefined; at: number }>()
   private readonly billingAccessInflight = new Map<string, Promise<CommandCodeBillingAccess | undefined>>()
+  /**
+   * Successful account-endpoint responses, keyed by gateway + key + exact URL.
+   *
+   * The settings card and the picker's advisory plan filter ask the SAME three
+   * endpoints about the SAME account (`/alpha/whoami`, then credits and
+   * subscriptions in parallel). Here that is four round trips per surface for
+   * two answers — and the card refreshes on a timer, so the picker keeps paying
+   * for rows it already has. Sharing the raw responses removes the duplicate
+   * without either surface having to know about the other: whoever asks second
+   * within {@link ACCOUNT_FACTS_TTL_MS} reads the same record instead of the
+   * wire.
+   *
+   * Only SUCCESSFUL records are kept. A failure must be retried rather than
+   * replayed, or an endpoint that recovered a second ago would keep reporting
+   * yesterday's outage — and the usage report's per-endpoint `failures` and
+   * {@link classifyTotalFailure} verdict would describe a request this process
+   * never made.
+   */
+  private readonly accountJson = new Map<string, { record: Record<string, unknown>; at: number }>()
   // Protocol preference is per gateway and account: the Go plan is the only plan without
   // Provider API access, and that fact is independent of model. A negative
   // result (provider API rejected this key with upgrade_required) is cached so
@@ -2730,19 +2760,34 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     }
   }
 
-  /** The headers every authenticated account endpoint shares. */
-  private async accountHeaders(apiKey?: string): Promise<Record<string, string>> {
+  /**
+   * Resolve and validate the key one account-endpoint call will use.
+   *
+   * Every account endpoint runs the chat path's own `assertUsableApiKey` check,
+   * or a key carrying a character no HTTP header can hold throws inside `fetch`
+   * BEFORE any I/O — once per endpoint — and the report reads as "the network is
+   * down". The credential reference is read structurally: it belongs to the
+   * host's resolved options, not to this adapter's connection type, and it only
+   * names the key in the rejection message.
+   *
+   * Separate from {@link accountHeadersFor} so a caller that also needs to key a
+   * cache by the same identity does not have to resolve the key twice.
+   */
+  private async usableAccountKey(apiKey?: string): Promise<string> {
     const connection = this.deps.options()
     const raw = apiKey ?? (await this.deps.resolveApiKey(connection))
-    // Every account endpoint runs the chat path's own `assertUsableApiKey`
-    // check, or a key carrying a character no HTTP header can hold throws
-    // inside `fetch` BEFORE any I/O — once per endpoint — and the report reads
-    // as "the network is down". The credential reference is read structurally:
-    // it belongs to the host's resolved options, not to this adapter's
-    // connection type, and it only names the key in the rejection message.
     const named = (connection as { apiKeyEnv?: unknown }).apiKeyEnv
     const ref = typeof named === 'string' && named !== '' ? named : 'the stored credential'
-    const key = assertUsableApiKey(raw, 'llm-commandcode', ref)
+    return assertUsableApiKey(raw, 'llm-commandcode', ref)
+  }
+
+  /** The headers every authenticated account endpoint shares. */
+  private async accountHeaders(apiKey?: string): Promise<Record<string, string>> {
+    return this.accountHeadersFor(await this.usableAccountKey(apiKey))
+  }
+
+  /** Headers for an already-validated key; see {@link usableAccountKey}. */
+  private accountHeadersFor(key: string): Record<string, string> {
     return {
       Authorization: `Bearer ${key}`,
       ...IDENTITY_ENCODING_HEADER,
@@ -2872,6 +2917,43 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
   }
 
   /**
+   * One account-endpoint GET, served from {@link accountJson} when `share` and
+   * the same URL answered successfully within {@link ACCOUNT_FACTS_TTL_MS}.
+   *
+   * `timeoutMs` is the CALLER's budget; a cache hit spends none of it. Failures
+   * are never cached, so this can only ever save a request that would have
+   * re-read an answer this process already had.
+   *
+   * `share: false` marks a VOLATILE endpoint — one whose answer is the number
+   * the user is actually looking at, and which must therefore never be replayed
+   * from an earlier request. The usage card's summary is exactly that: its
+   * headline counts and cost are the reason the card exists, and stamping a
+   * cached copy with the current time would misreport when they were read.
+   * Identity and billing facts are the opposite: a plan tier or an org id that
+   * is 30 s old is still the truth, and those are what the picker duplicates.
+   */
+  private async accountJsonGet(
+    apiBase: string,
+    apiKey: string,
+    path: string,
+    timeoutMs: number,
+    share = true,
+  ): Promise<{ status: number; record?: Record<string, unknown>; responseFailure?: string }> {
+    const cacheKey = JSON.stringify([apiBase, apiKey, path])
+    if (share) {
+      const hit = this.accountJson.get(cacheKey)
+      if (hit !== undefined && Date.now() - hit.at < ACCOUNT_FACTS_TTL_MS) {
+        return { status: 200, record: hit.record }
+      }
+    }
+    const answer = await this.fetchJson(`${apiBase}${path}`, this.accountHeadersFor(apiKey), timeoutMs)
+    if (share && answer.record !== undefined) {
+      this.accountJson.set(cacheKey, { record: answer.record, at: Date.now() })
+    }
+    return answer
+  }
+
+  /**
    * The billing facts behind the picker's plan filter, mirroring the CLI's
    * `createBilling` flow: whoami yields the org id, then the subscriptions
    * and credits endpoints answer in parallel. The plan id is honored only
@@ -2882,10 +2964,13 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
    */
   private async fetchBillingAccess(apiBase: string, apiKey: string): Promise<CommandCodeBillingAccess | undefined> {
     try {
-      const headers = await this.accountHeaders(apiKey)
+      // Validate once, then address the shared per-account records by the key
+      // that will actually travel: a usage-report run seconds ago may already
+      // have read all three endpoints about this same account.
+      const key = await this.usableAccountKey(apiKey)
       // Billing probe fails open silently: any non-record is "unknown".
       const getJson = async (path: string): Promise<Record<string, unknown> | undefined> =>
-        (await this.fetchJson(`${apiBase}${path}`, headers)).record
+        (await this.accountJsonGet(apiBase, key, path, MODELS_TIMEOUT_MS)).record
       const whoami = await getJson('/alpha/whoami')
       const orgData = whoami && isRecord(whoami.org) ? whoami.org : undefined
       const orgId = orgData === undefined ? undefined : stringValue(orgData.id)
@@ -3005,9 +3090,9 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
   async getUsage(apiKey?: string, capturedConnection?: C): Promise<CommandCodeUsageReport> {
     const connection = capturedConnection ?? { ...this.deps.options() }
     const base = connection.apiBase
-    let headers: Record<string, string>
+    let key: string
     try {
-      headers = await this.accountHeaders(apiKey)
+      key = await this.usableAccountKey(apiKey)
     } catch (error: unknown) {
       // An unusable key is a CREDENTIAL verdict, not a transport one. A
       // missing key still propagates (the caller renders the unconfigured
@@ -3023,12 +3108,18 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     // received a response. The former used to be counted as "network".
     const failed: UsageEndpointFailure[] = []
 
-    const getJson = async (path: string): Promise<Record<string, unknown> | undefined> => {
+    const getJson = async (path: string, share = true): Promise<Record<string, unknown> | undefined> => {
       try {
-        const { status, record, responseFailure } = await this.fetchJson(
-          `${base}${path}`,
-          headers,
+        // Identity and billing facts are shared with the picker's plan filter:
+        // whichever surface asked for this exact URL most recently already paid
+        // for it, and a 30 s old org id or plan tier is still the truth. The
+        // CARD's own budget is still the one a real fetch runs under.
+        const { status, record, responseFailure } = await this.accountJsonGet(
+          base,
+          key,
+          path,
           connection.requestTimeoutMs,
+          share,
         )
         if (record === undefined) {
           failures.push(`${path}: HTTP ${status}${responseFailure ? `；${responseFailure}` : ''}`)
@@ -3067,7 +3158,9 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     const validStart = periodStart > 0 && Number.isFinite(new Date(periodStart).getTime())
     // 保留上游时间的字符串/毫秒表示，仅编码查询值，不重算日期或时区。
     const since = validStart ? String(rawStart) : undefined
-    const usage = await getJson(scopedPath('/alpha/usage/summary', since))
+    // Not shared: these are the numbers on the card, and the timestamp beside
+    // them must describe when they were actually read.
+    const usage = await getJson(scopedPath('/alpha/usage/summary', since), false)
 
     // usage/summary -> totals.
     const totals = parseUsageTotals(usage)

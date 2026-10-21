@@ -382,6 +382,25 @@ declare class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Comman
   private readonly surfaceOffload;
   private readonly billingAccess;
   private readonly billingAccessInflight;
+  /**
+   * Successful account-endpoint responses, keyed by gateway + key + exact URL.
+   *
+   * The settings card and the picker's advisory plan filter ask the SAME three
+   * endpoints about the SAME account (`/alpha/whoami`, then credits and
+   * subscriptions in parallel). Here that is four round trips per surface for
+   * two answers — and the card refreshes on a timer, so the picker keeps paying
+   * for rows it already has. Sharing the raw responses removes the duplicate
+   * without either surface having to know about the other: whoever asks second
+   * within {@link ACCOUNT_FACTS_TTL_MS} reads the same record instead of the
+   * wire.
+   *
+   * Only SUCCESSFUL records are kept. A failure must be retried rather than
+   * replayed, or an endpoint that recovered a second ago would keep reporting
+   * yesterday's outage — and the usage report's per-endpoint `failures` and
+   * {@link classifyTotalFailure} verdict would describe a request this process
+   * never made.
+   */
+  private readonly accountJson;
   private readonly protocolCache;
   /** Namespace account-derived facts by gateway without exposing the key. */
   private accountCacheKey;
@@ -488,8 +507,24 @@ declare class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Comman
    */
   allowanceTier(): Promise<'go' | 'goat' | 'pro' | undefined>;
   resolveModel(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
+  /**
+   * Resolve and validate the key one account-endpoint call will use.
+   *
+   * Every account endpoint runs the chat path's own `assertUsableApiKey` check,
+   * or a key carrying a character no HTTP header can hold throws inside `fetch`
+   * BEFORE any I/O — once per endpoint — and the report reads as "the network is
+   * down". The credential reference is read structurally: it belongs to the
+   * host's resolved options, not to this adapter's connection type, and it only
+   * names the key in the rejection message.
+   *
+   * Separate from {@link accountHeadersFor} so a caller that also needs to key a
+   * cache by the same identity does not have to resolve the key twice.
+   */
+  private usableAccountKey;
   /** The headers every authenticated account endpoint shares. */
   private accountHeaders;
+  /** Headers for an already-validated key; see {@link usableAccountKey}. */
+  private accountHeadersFor;
   /**
    * Fetch one JSON GET and return its HTTP status with a parsed record. The
    * catalog, billing probe, and usage report each apply their own failure
@@ -524,6 +559,23 @@ declare class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Comman
    * everything" (fail-open).
    */
   private loadBillingAccessForKey;
+  /**
+   * One account-endpoint GET, served from {@link accountJson} when `share` and
+   * the same URL answered successfully within {@link ACCOUNT_FACTS_TTL_MS}.
+   *
+   * `timeoutMs` is the CALLER's budget; a cache hit spends none of it. Failures
+   * are never cached, so this can only ever save a request that would have
+   * re-read an answer this process already had.
+   *
+   * `share: false` marks a VOLATILE endpoint — one whose answer is the number
+   * the user is actually looking at, and which must therefore never be replayed
+   * from an earlier request. The usage card's summary is exactly that: its
+   * headline counts and cost are the reason the card exists, and stamping a
+   * cached copy with the current time would misreport when they were read.
+   * Identity and billing facts are the opposite: a plan tier or an org id that
+   * is 30 s old is still the truth, and those are what the picker duplicates.
+   */
+  private accountJsonGet;
   /**
    * The billing facts behind the picker's plan filter, mirroring the CLI's
    * `createBilling` flow: whoami yields the org id, then the subscriptions
