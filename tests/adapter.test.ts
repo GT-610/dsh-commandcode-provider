@@ -4591,6 +4591,36 @@ test('a second output-ceiling refusal fails the turn and does not blame the cont
   assert.equal(attempts(), 2)
 })
 
+test('a JSON node-count refusal names the gateway structure cap, not a context overflow (issue #96)', async () => {
+  // The gateway refused the request's JSON STRUCTURE — too many nodes —
+  // while the session was well inside the token window. Before this branch
+  // the refusal fell through to the generic wording, which drops the
+  // upstream sentence entirely, so the one fact that names the actual cap
+  // never reached the user.
+  const { adapter, model, attempts } = ceilingProbeAdapter('claude-node-limit', () =>
+    ceilingRejection(400, 'JSON node count cannot exceed 32768'))
+  await assert.rejects(
+    collect(adapter.stream({ provider: 'commandcode', model, messages: [userMessage('hi')] })),
+    (error: unknown) => {
+      const message = (error as Error).message
+      assert.equal((error as { code?: string }).code, 'PROVIDER_HTTP_ERROR')
+      // The cap the gateway stated, so the user can tell this failure apart
+      // from both a token budget and the generic refusal it used to land in.
+      assert.match(message, /32768/u)
+      assert.match(message, /JSON node limit/u)
+      // Not a context overflow: compaction shrinks tokens, and the resent
+      // structure would exceed the same cap. The wording has to say so, not
+      // merely avoid the word.
+      assert.doesNotMatch(message, /context window|上下文窗口/u)
+      assert.match(message, /compacting the session will not help/u)
+      assert.match(message, /压缩上下文无效/u)
+      return true
+    },
+  )
+  // Permanent and request-scoped: no ceiling to learn, nothing to resend.
+  assert.equal(attempts(), 1)
+})
+
 test('a ceiling learned from a refusal is what the next turn sends', async () => {
   const { adapter, model, sent } = ceilingProbeAdapter('claude-ceiling-learned', (attempt) =>
     attempt === 0
