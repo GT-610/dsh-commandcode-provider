@@ -26,7 +26,15 @@ import assert from 'node:assert/strict'
 
 import type { SettingsPageState, StagedField } from '../src/client/settings.ts'
 
-const { advancedGroupInvalid, modelsGroupInvalid } = await import('../src/client/section.tsx')
+const {
+  accountIssues,
+  advancedGroupInvalid,
+  advancedOverriddenCount,
+  invalidGroups,
+  modelsGroupInvalid,
+  modelsOverriddenCount,
+  stagedSwitch,
+} = await import('../src/client/section.tsx')
 
 /** One staged field draft; only `invalid` matters to the group judgements. */
 function staged(invalid: boolean): StagedField {
@@ -115,3 +123,42 @@ for (const key of ADVANCED_KEYS) {
     assert.equal(advancedGroupInvalid({ ...VALID_ADVANCED, [key]: staged(true) }), true)
   })
 }
+
+// ---- Heading summaries and the save bar's locate target (决策记录第十章第4条) ----
+
+/** A staged draft with only the fields the summaries read. */
+function draft(over: Partial<StagedField>): StagedField {
+  return { ...staged(false), ...over }
+}
+
+test('invalidGroups: nothing invalid → nothing to open', () => {
+  assert.deepEqual(invalidGroups({ ...modelsState({}), ...VALID_ADVANCED }), [])
+})
+
+test('invalidGroups: lists the groups holding a bad draft, in page order', () => {
+  const state = { ...modelsState({ rows: [true] }), ...VALID_ADVANCED, requestTimeoutMs: staged(true) }
+  assert.deepEqual(invalidGroups(state), ['models', 'advanced'])
+})
+
+test('modelsOverriddenCount: customized fields plus one per override row', () => {
+  const state = { ...modelsState({ rows: [false, false] }), maxOutputTokens: draft({ overridden: true }) }
+  assert.equal(modelsOverriddenCount(state), 3)
+})
+
+test('advancedOverriddenCount: counts only the customized drafts', () => {
+  assert.equal(advancedOverriddenCount(VALID_ADVANCED), 0)
+  assert.equal(advancedOverriddenCount({ ...VALID_ADVANCED, apiBase: draft({ overridden: true }) }), 1)
+})
+
+test('stagedSwitch: an unset draft reads as the default, otherwise the staged text', () => {
+  assert.equal(stagedSwitch(draft({ text: '' }), true), true)
+  assert.equal(stagedSwitch(draft({ text: '' }), false), false)
+  assert.equal(stagedSwitch(draft({ text: 'true' }), false), true)
+  assert.equal(stagedSwitch(draft({ text: 'false' }), true), false)
+})
+
+test('accountIssues: matches the row dots — a rejected key is severe, a cooldown or mark is a warning', () => {
+  assert.deepEqual(accountIssues([undefined, { mark: '', cooldownUntil: 0 }]), { count: 0, severe: false })
+  assert.deepEqual(accountIssues([{ mark: '', cooldownUntil: 1 }, { mark: 'rate-limit', cooldownUntil: 0 }]), { count: 2, severe: false })
+  assert.deepEqual(accountIssues([{ mark: 'invalid-credential', cooldownUntil: 0 }, { mark: '', cooldownUntil: 0 }]), { count: 1, severe: true })
+})

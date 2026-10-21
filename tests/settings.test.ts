@@ -291,11 +291,13 @@ test('the settings copy states the shipped default, in seconds', () => {
   const seconds = String(DEFAULT_REQUEST_TIMEOUT_MS / 1000)
   assert.ok(zh.requestTimeoutMsHint.includes(seconds), 'zh hint names the real default')
   assert.ok(en.requestTimeoutMsHint.includes(`${seconds} s`), 'en hint names the real default')
+  // The unit is the input's suffix (the unified field style), not the label.
+  assert.equal(zh.unitSeconds, '秒', 'zh suffix names the unit as seconds')
+  assert.equal(en.unitSeconds, 's', 'en suffix names the unit as seconds')
   for (const [name, text] of [
     ['zh', zh.requestTimeoutMs],
     ['en', en.requestTimeoutMs],
   ] as const) {
-    assert.ok(text.includes('秒') || text.includes('second'), `${name} label names the unit as seconds`)
     assert.equal(text.includes('毫秒') || text.includes('(ms)'), false, `${name} label drops milliseconds`)
   }
   assert.equal(zh.streamIdleTimeoutMsHint.includes(seconds), true)

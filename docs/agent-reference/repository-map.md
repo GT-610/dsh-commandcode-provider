@@ -109,12 +109,13 @@ src/client/section.tsx  The settings page React component: the unified
                       (Models & context — plan filter, visible-model allowlist,
                       then the flat custom-context-length field and the
                       per-model override rows — Privacy & security,
-                      Integrations & display, Advanced). Models & context and
-                      Advanced fold from one shared `CollapsibleGroup` /
-                      `DisclosureHead` and start collapsed (issue #94); the
-                      pure `advancedGroupInvalid` / `modelsGroupInvalid`
-                      judgements behind their heading badges are exported for
-                      `tests/section.test.ts`.
+                      Integrations & display, Advanced). All five groups fold
+                      from one `FoldableGroup` heading with summary badges; the
+                      pure judgements behind the badges and the save bar's
+                      Locate action are exported for `tests/section.test.ts`.
+src/client/group-fold.ts  Which settings groups are open: defaults (Accounts
+                      only), tolerant parse, and the one-key localStorage
+                      store (`tests/group-fold.test.ts`).
 src/client/card.tsx   The Models-page provider card (keyed-slot component +
                       the SlotMap merge for `settings.models.provider-card` /
                       `settings.models.footer`, mirroring upstream).

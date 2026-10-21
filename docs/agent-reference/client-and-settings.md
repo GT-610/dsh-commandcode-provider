@@ -268,15 +268,16 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   be reconciled; unaccepted drafts remain. Successful saves clear only the captured draft versions,
   including a frozen visible-model selection. Account lists are rebuilt from raw stored entries so
   literal-key or unknown entries the page cannot name survive unrelated account edits.
-- **设置页折叠（issue #94）**：「模型与上下文」分组默认收起，点标题整行展开/收起；折叠头与「高级设置」共用
-  `DisclosureHead`／`CollapsibleGroup`（`src/client/section.tsx`）——整行可点、箭头在行尾、展开状态只活在
-  组件内 `useState`，既不跨刷新记忆也不进配置文档。折叠是**纯呈现层**开关：`filterModelsByPlan`／
-  `visibleModels`／`contextWindow`／`maxOutputTokens`／`contextWindowOverrides` 五个字段的暂存、校验与整批
-  提交路径一概不变，收起只决定组内 DOM 是否渲染。默认收起会把组内的无效数字一并藏起、而保存按钮随之禁用，
-  故折叠时标题行显示警告徽标（locale 键 `modelsInvalid`）；「组内是否有未填好的数字」抽成导出纯函数
-  `advancedGroupInvalid`／`modelsGroupInvalid`，由 React-free 用例固定（`tests/section.test.ts`）。
-  **已知取舍**：折叠头标题用 `span` 而非 `h3`（与「高级设置」一致，`button` 内不能放 heading），
-  该分组因此不在标题导航（heading navigation）里。
+- **设置页折叠（决策记录第十章第4条，取代 issue #94 的单组折叠）**：五个顶级分组共用 `FoldableGroup`
+  （`src/client/section.tsx`）——`h3` 包一个整行按钮，箭头在标题左侧，「刷新」这类分组动作放在按钮外。
+  默认只展开「账户」；页头「全部展开／全部收起」；展开状态存在浏览器本地一个键
+  `@mars-sea/dsh-commandcode-provider/settings-fold`（`src/client/group-fold.ts`，缺失、损坏或存储被禁用时回落
+  默认，不进配置文档、不随 profile 同步）。收起的正文用 `hidden` 保留挂载，`aria-controls` 始终有效。
+  标题旁摘要徽标展开收起都显示（账户数与异常数、白名单数量、已自定义项数、ZDR／联网搜索开关、服务状态）；
+  组内有未填好的数字时，**收起状态**下额外挂错误徽标（`groupInvalid`）。保存按钮在校验失败时仍禁用，保存条
+  多一个「定位」按钮：展开出错分组（`invalidGroups`）并聚焦第一个 `aria-invalid` 控件。折叠是**纯呈现层**：
+  各字段的暂存、校验与整批提交路径不变。摘要与定位的判定都是导出纯函数，由 `tests/section.test.ts`、
+  `tests/group-fold.test.ts` 固定。
 - **自定义上下文长度（issue #86）**：`Config.contextWindow`（全局值）与 `Config.contextWindowOverrides`
   （按模型，键为目录 id）覆盖宣告给宿主的上下文窗口，解析顺序为按模型 → 全局 → 目录。页面上是
   「模型与上下文」分组内平铺的两段内容（`ContextCard` 渲染，直接排在「隐藏套餐外模型」开关与可见模型
@@ -323,5 +324,14 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   包含基础层隐藏项的显式覆盖。保存冲突或缺少原子写入能力时保留草稿。
   显示全部会选中已加载的目录模型；目录失败不清空已存选择。
 - **字号与校验说明**：页面及面板辅助文字至少 12px；重试次数提示与实际 0～50 次限制一致。
+- **设置页统一风格（2026-10-21）**：按钮一律用宿主 `Button` 原语（28px／8px 圆角、36px／12px
+  圆角，次要操作用 `outline`，危险确认用 `outline` + `cc-dangerButton`；保存条也用它，条的 16px 圆角与按钮
+  12px 圆角同心）；容器只有三种——实体卡片（账户，0.5px 描边、12px 圆角）、面板（`cc-panel`，填充底、12px
+  圆角，承载添加账户、粘贴密钥、重命名）、数值块（`cc-usageStat`，8px 圆角）；登录状态、无密钥引导、移除确认、
+  用量阻断都走 `Notice`（新增成功档）；账户状态徽标用 `cc-badgeOk／Warn／Error`；输入框、带单位输入框（`cc-unitInput`，单位作后缀，标签不再重复单位）、
+  模型选择器统一 32px／8px 圆角／0.5px `border-l4`；「重置」是行尾 28px 图标按钮，未覆盖的行保留同宽空位
+  使控件右缘对齐；结果、警告与失败统一用 `Notice`（`cc-notice`，中性／警告／错误三档，带线性图标）；
+  页面图标只用 `section.tsx` 里的 `Icon` 线性 SVG，不用 `×`、`↗` 等字符。Models 页服务商卡片
+  （`card.tsx`、`login-row.tsx`）仍用旧的 `cc-field`／`cc-reset` 类，新类名刻意不与之重名。
 - **模型分析第二版**：历史与试算仍读取同一份既有报告；模型名称复用试算目录，成本比例只比较已知小计，零小计或无计价样本不生成占比。`analytics-comparison.ts` 在客户端派生逐模型 30 天试算及相同完整工作量的成本差额；缺价、排除、历史不完整与零基准有独立展示口径，不扩展远端。页签、展开与模型筛选不增加远端读取，刷新保留草稿并使用已提交范围。窄面板按实际可用宽度恢复指标标签，未知数据不补零。统计口径及浏览器验证边界见[模型分析说明](../模型成本与性能分析.md)和[第二版设计](../模型分析第二版设计.md)。
 - **压缩摘要计入会话费用读数**：`compaction/summary`（上下文压缩摘要）事件也会产生真实花费——压缩器自己调一次 `ctx.llm.stream()`，但不落在任何 turn/step 上，也不产生 `request/header`。费用投影把它折进分组，并用 `summaryTokens` 记录「已折进分组、但不属于宿主 `tokenUsage`」的那部分，对账等式因此变为「分组合计 − `summaryTokens` === 宿主 `tokenUsage`」；历史分析侧同样单独登记一条请求事实。详见[模型分析说明](../模型成本与性能分析.md)。

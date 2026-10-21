@@ -40,9 +40,21 @@ export type SettingsCommandCodeKey =
   | 'offloadSeenImagesForCacheHint'
   | 'advancedSettings'
   | 'advancedSettingsHint'
-  | 'advancedOverriddenOne'
-  | 'advancedOverriddenMany'
-  | 'advancedInvalid'
+  | 'groupOverriddenOne'
+  | 'groupOverriddenMany'
+  | 'groupInvalid'
+  | 'expandAll'
+  | 'collapseAll'
+  | 'saveLocate'
+  | 'accountsSummaryOne'
+  | 'accountsSummaryMany'
+  | 'accountsSummaryIssues'
+  | 'visibleModelsSummary'
+  | 'visibleModelsSummaryAll'
+  | 'zdrSummaryOn'
+  | 'zdrSummaryOff'
+  | 'webSearchSummaryOn'
+  | 'webSearchSummaryOff'
   | 'filterModelsByPlan'
   | 'filterModelsByPlanHint'
   | 'webSearch'
@@ -84,6 +96,9 @@ export type SettingsCommandCodeKey =
   | 'maxOutputTokensInvalid'
   | 'overridden'
   | 'reset'
+  | 'unitSeconds'
+  | 'unitTokens'
+  | 'unitRetries'
   | 'invalidNumber'
   | 'numberTooSmall'
   | 'numberTooLarge'
@@ -218,7 +233,6 @@ export type SettingsCommandCodeKey =
   | 'modelAllowanceTitle'
   | 'modelCatalogFailed'
   | 'modelsTitle'
-  | 'modelsInvalid'
   | 'privacyTitle'
   | 'integrationsTitle'
   // 服务状态行：官方状态页的公开探测数据，见 `./service-status.ts`。
@@ -255,9 +269,9 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   apiKeyLocked: '密钥由只读来源提供',
   apiBase: 'API 地址',
   apiBaseHint: '默认 https://api.commandcode.ai，一般无需修改。',
-  requestTimeoutMs: '请求超时（秒）',
+  requestTimeoutMs: '请求超时',
   requestTimeoutMsHint: '等待响应首个字节的超时；默认 300 秒（与官方 CLI 一致）。Provider API 路由要等上游模型吐出第一个 token 才返回响应头，上游慢时仍可能不够；报超时时可按提示调高。',
-  streamIdleTimeoutMs: '流空闲超时（秒）',
+  streamIdleTimeoutMs: '流空闲超时',
   streamIdleTimeoutMsHint: '生成流停滞多久视为断连；默认 300 秒（长思考模型可静默数分钟，默认值刻意放宽）。',
   transportMaxRetries: '网络失败重试次数',
   transportMaxRetriesHint: '连接失败时自动重试几次，默认 5（各次等待 0.5+1+2+4+8 秒，合计约 15 秒）。'
@@ -266,9 +280,22 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   offloadSeenImagesForCacheHint: '仅 CLI 传输。模型看过图片并回复后，永久用文字占位替代旧图片，以减少新增图片时的缓存回退。模型如需重看旧图，必须重新读取文件或让用户重新附加。默认关闭。',
   advancedSettings: '高级设置',
   advancedSettingsHint: 'API 地址和网络参数，一般无需修改。',
-  advancedOverriddenOne: '已自定义 1 项',
-  advancedOverriddenMany: '已自定义 {count} 项',
-  advancedInvalid: '高级设置中有未填好的数字，请展开修正后再保存。',
+  groupOverriddenOne: '已自定义 1 项',
+  groupOverriddenMany: '已自定义 {count} 项',
+  // 分组头的摘要徽标：收起时不展开也能看出该组现状（决策记录第十章第4条）。
+  groupInvalid: '有未填好的数字',
+  expandAll: '全部展开',
+  collapseAll: '全部收起',
+  saveLocate: '定位',
+  accountsSummaryOne: '1 个账户',
+  accountsSummaryMany: '{count} 个账户',
+  accountsSummaryIssues: '{count} 个异常',
+  visibleModelsSummary: '白名单 {count} 个',
+  visibleModelsSummaryAll: '显示全部模型',
+  zdrSummaryOn: 'ZDR 开启',
+  zdrSummaryOff: 'ZDR 关闭',
+  webSearchSummaryOn: '联网搜索开启',
+  webSearchSummaryOff: '联网搜索关闭',
   filterModelsByPlan: '隐藏套餐外模型',
   filterModelsByPlanHint: '只显示套餐内模型；按需余额账户仍显示全部。',
   webSearch: '用 Command Code 承载联网搜索',
@@ -318,6 +345,10 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   maxOutputTokensInvalid: '请输入 0 或有效的整数 token 数',
   overridden: '已覆盖',
   reset: '重置',
+  // 数字输入框右侧的单位后缀；标签里不再重复单位。
+  unitSeconds: '秒',
+  unitTokens: 'tokens',
+  unitRetries: '次',
   invalidNumber: '无效数字',
   numberTooSmall: '重试次数不能小于 0',
   numberTooLarge: '重试次数不能大于 50',
@@ -393,7 +424,7 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   loginButton: '登录 Command Code',
   loginStarting: '正在启动本地回调服务…',
   loginWaiting: '等待在浏览器中完成授权；若页面未自动打开，请点击授权链接。',
-  loginOpenLink: '打开授权页面 ↗',
+  loginOpenLink: '打开授权页面',
   loginCancel: '取消登录',
   loginSuccess: '已登录为',
   loginUnavailable: '此环境暂不支持登录流程，请手动粘贴密钥。',
@@ -450,7 +481,6 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   modelCount: '已选 {count} 个模型',
   modelCatalogFailed: '模型目录获取失败，暂时无法选择模型；已保存的设置仍会生效。',
   modelsTitle: '模型与上下文',
-  modelsInvalid: '模型与上下文中有未填好的数字，请展开修正后再保存。',
   privacyTitle: '隐私与安全',
   integrationsTitle: '集成与显示',
   serviceStatusTitle: '服务状态',
@@ -508,9 +538,9 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   apiKeyLocked: 'Key provided by a read-only source',
   apiBase: 'API base URL',
   apiBaseHint: 'Defaults to https://api.commandcode.ai; usually leave as-is.',
-  requestTimeoutMs: 'Request timeout (seconds)',
+  requestTimeoutMs: 'Request timeout',
   requestTimeoutMsHint: 'Time to wait for the first response byte; default 300 s (the official CLI’s). The Provider API route withholds headers until the upstream model emits its first token, so a slow upstream can still outlast the default; raise it when a timeout message suggests it.',
-  streamIdleTimeoutMs: 'Stream idle timeout (seconds)',
+  streamIdleTimeoutMs: 'Stream idle timeout',
   streamIdleTimeoutMsHint: 'How long a stalled stream is treated as dead; default 300 s'
     + ' (deliberately generous — long-thinking models can stay silent for minutes).',
   transportMaxRetries: 'Transport retries',
@@ -522,9 +552,21 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   offloadSeenImagesForCacheHint: 'CLI transport only. After this model responds to an image, durably replace older pixels with text to avoid cache rollback when another image arrives. To inspect an old image again, the model must reread its file or the user must attach it again. Off by default.',
   advancedSettings: 'Advanced',
   advancedSettingsHint: 'API base URL and network limits; usually leave as-is.',
-  advancedOverriddenOne: '1 customized',
-  advancedOverriddenMany: '{count} customized',
-  advancedInvalid: 'A number in Advanced settings is not ready to save; expand to fix it.',
+  groupOverriddenOne: '1 customized',
+  groupOverriddenMany: '{count} customized',
+  groupInvalid: 'Needs a fix',
+  expandAll: 'Expand all',
+  collapseAll: 'Collapse all',
+  saveLocate: 'Show',
+  accountsSummaryOne: '1 account',
+  accountsSummaryMany: '{count} accounts',
+  accountsSummaryIssues: '{count} need attention',
+  visibleModelsSummary: '{count} allowlisted',
+  visibleModelsSummaryAll: 'All models shown',
+  zdrSummaryOn: 'ZDR on',
+  zdrSummaryOff: 'ZDR off',
+  webSearchSummaryOn: 'Web search on',
+  webSearchSummaryOff: 'Web search off',
   filterModelsByPlan: 'Hide out-of-plan models',
   filterModelsByPlanHint: 'Show only models in your plan; on-demand credit accounts still see the full catalog.',
   webSearch: 'Serve dsh web search with Command Code',
@@ -580,6 +622,9 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   maxOutputTokensInvalid: 'Enter 0 or a valid whole-token count',
   overridden: 'Overridden',
   reset: 'Reset',
+  unitSeconds: 's',
+  unitTokens: 'tokens',
+  unitRetries: 'times',
   invalidNumber: 'Invalid number',
   numberTooSmall: 'Retries must be at least 0',
   numberTooLarge: 'Retries must not exceed 50',
@@ -655,7 +700,7 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   loginButton: 'Sign in to Command Code',
   loginStarting: 'Starting the local callback server…',
   loginWaiting: 'Waiting for authorization in your browser. If the page did not open automatically, use the authorization link.',
-  loginOpenLink: 'Open the authorization page ↗',
+  loginOpenLink: 'Open the authorization page',
   loginCancel: 'Cancel sign-in',
   loginSuccess: 'Signed in as',
   loginUnavailable: 'Sign-in is unavailable in this environment; paste the API key instead.',
@@ -712,7 +757,6 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   modelCount: '{count} models selected',
   modelCatalogFailed: 'The model catalog could not be loaded; saved settings still apply.',
   modelsTitle: 'Models & context',
-  modelsInvalid: 'A number in Models & context is not ready to save; expand to fix it.',
   privacyTitle: 'Privacy & security',
   integrationsTitle: 'Integrations & display',
   serviceStatusTitle: 'Service status',
