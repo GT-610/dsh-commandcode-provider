@@ -4508,6 +4508,19 @@ function ceilingRejection(status: number, message: string): Response {
   )
 }
 
+/**
+ * The shape issue #96's gateway actually sends: `error.message` is an escaped
+ * JSON string, so the sentence naming the cap only exists after one unwrap —
+ * in `ParsedProviderError.rawMessage`, not `message`. Reproduced verbatim so a
+ * regression in that unwrap path cannot hide behind a flat single-layer body.
+ */
+function nestedGatewayRejection(status: number, inner: Record<string, unknown>): Response {
+  return new Response(
+    JSON.stringify({ error: { message: `${JSON.stringify(inner)}\n`, type: 'invalid_request_error' } }),
+    { status },
+  )
+}
+
 test('an HTTP output-ceiling refusal retries once at the ceiling the endpoint names', async () => {
   const { adapter, model, sent, attempts } = ceilingProbeAdapter('claude-ceiling-http', (attempt) =>
     attempt === 0
@@ -4598,7 +4611,12 @@ test('a JSON node-count refusal names the gateway structure cap, not a context o
   // upstream sentence entirely, so the one fact that names the actual cap
   // never reached the user.
   const { adapter, model, attempts } = ceilingProbeAdapter('claude-node-limit', () =>
-    ceilingRejection(400, 'JSON node count cannot exceed 32768'))
+    // issue #96's real body, double-encoded: the cap sentence lives only in
+    // `rawMessage`, which is the path this branch has to see.
+    nestedGatewayRejection(400, {
+      message: 'Invalid request JSON: JSON node count cannot exceed 32768 trace_id: 266affc7ac3a831b5846bdafebff8372',
+      type: 'invalid_request_error',
+    }))
   await assert.rejects(
     collect(adapter.stream({ provider: 'commandcode', model, messages: [userMessage('hi')] })),
     (error: unknown) => {
@@ -4608,12 +4626,13 @@ test('a JSON node-count refusal names the gateway structure cap, not a context o
       // from both a token budget and the generic refusal it used to land in.
       assert.match(message, /32768/u)
       assert.match(message, /JSON node limit/u)
-      // Not a context overflow: compaction shrinks tokens, and the resent
-      // structure would exceed the same cap. The wording has to say so, not
-      // merely avoid the word.
+      // Not a context overflow: compaction shrinks the message and part
+      // count, so it can help — but usually not enough on its own. The
+      // wording has to say both, calling neither the session oversized nor
+      // compaction a guaranteed fix.
       assert.doesNotMatch(message, /context window|上下文窗口/u)
-      assert.match(message, /compacting the session will not help/u)
-      assert.match(message, /压缩上下文无效/u)
+      assert.match(message, /compacting the session usually will not be enough/u)
+      assert.match(message, /压缩上下文通常不足以降到该上限以内/u)
       return true
     },
   )
