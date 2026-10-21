@@ -387,6 +387,17 @@ function headersTimeoutError(input: {
 const SCHEMA_NORMALIZE_MAX_DEPTH = 4
 
 /**
+ * Depth-0 normalization results, keyed by the caller's own `parameters` object.
+ *
+ * {@link toolParametersSchema} only ever reads the root, so a schema that has
+ * already been normalized returns the identical answer however many times it is
+ * asked. The tool list is rebuilt for EVERY attempt — a rotation or a protocol
+ * fallback rebuilds it again — and the objects come from the harness, so they
+ * stay identical for the life of a turn: identity is an exact key.
+ */
+const TOOL_SCHEMA_CACHE = new WeakMap<object, Record<string, unknown>>()
+
+/**
  * Whether a type-less node is object-shaped enough to be one with the type
  * declared: `properties`/`required`/`additionalProperties` only make sense on
  * an object, and a schema carrying them was meant to be one.
@@ -442,7 +453,7 @@ function mergeCombinatorBranches(
     const objectBranches: Record<string, unknown>[] = []
     for (const branch of branches) {
       if (!isRecord(branch)) continue
-      objectBranches.push(toolParametersSchema(branch, depth + 1))
+      objectBranches.push(normalizeToolParameters(branch, depth + 1))
     }
     if (objectBranches.length === 0) continue
     sawBranch = true
@@ -483,10 +494,33 @@ function mergeCombinatorBranches(
  * resolved/merged; anything else (an array/scalar root, or no schema at all)
  * degrades to a permissive free-form object, because a request the provider
  * refuses helps no one and the tool's own description is still in the prompt.
- * Only the root is touched and every path returns a copy: the harness may
- * deep-freeze the caller's schema.
+ *
+ * Only the ROOT is touched. The object-root fast path deliberately returns the
+ * caller's own object: an already-normalized schema is the common case, the
+ * function has always answered with that same identity, and callers rely on it
+ * to get the same frozen schema they handed in. Everything this function
+ * CONSTRUCTS is a fresh object, so no caller can mutate another's schema.
+ *
+ * The ROOT is memoized per `parameters` object, because every transport rebuilds
+ * its tool list on every attempt — on a rotating or downshifting request the
+ * same handful of tool schemas is walked four, five, six times for an answer
+ * that cannot have changed. The tool objects come from the harness and are
+ * stable for the life of a turn, so a WeakMap keyed on identity is exact: a
+ * genuinely different schema is a different object and misses. Nested
+ * `$ref`/combinator branches are reached through {@link normalizeToolParameters}
+ * and are not memoized; only the root is asked for on a hot path.
  */
-function toolParametersSchema(parameters: unknown, depth = 0): Record<string, unknown> {
+function toolParametersSchema(parameters: unknown): Record<string, unknown> {
+  if (!isRecord(parameters)) return normalizeToolParameters(parameters, 0)
+  const cached = TOOL_SCHEMA_CACHE.get(parameters)
+  if (cached !== undefined) return cached
+  const normalized = normalizeToolParameters(parameters, 0)
+  TOOL_SCHEMA_CACHE.set(parameters, normalized)
+  return normalized
+}
+
+/** Depth-0 normalization of {@link toolParametersSchema}; see its memo there. */
+function normalizeToolParameters(parameters: unknown, depth: number): Record<string, unknown> {
   if (!isRecord(parameters)) return { type: 'object', properties: {}, additionalProperties: true }
   if (parameters.type === 'object') return parameters
   // `["object", "null"]` is accepted by JSON Schema but not by the provider's
@@ -500,7 +534,7 @@ function toolParametersSchema(parameters: unknown, depth = 0): Record<string, un
       const target = resolveLocalRef(parameters, parameters.$ref)
       if (target !== undefined) {
         const { $ref: _ref, ...rest } = parameters
-        return toolParametersSchema({ ...target, ...rest }, depth + 1)
+        return normalizeToolParameters({ ...target, ...rest }, depth + 1)
       }
     }
     if (isObjectShaped(parameters)) return { ...parameters, type: 'object' }
