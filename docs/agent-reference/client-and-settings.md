@@ -2,7 +2,7 @@
 
 Task-specific reference moved from the former root `AGENTS.md`. All source and test paths are relative to the repository root. Consult the relevant source and tests before changing behavior.
 
-- **账号开通**：两种新增方式统一使用 `src/enrollment.ts`；`src/client/enrollment.ts` 由每次设置页挂载持有，`AddAccountPanel` 只负责输入和意图。离开设置页取消未完成过程，已登录待命名则接受已有名称；命名失败保留账号，清理失败保留恢复记录并提供手动重试。默认或已有账号的 `login*` 契约继续使用原控制器。
+- **账号开通**：两种新增方式统一使用 `src/enrollment.ts`；`src/client/enrollment.ts` 由每次设置页挂载持有，`AddAccountPanel` 只负责输入和意图。面板按设计稿：「网页登录／粘贴密钥」分段切换 → 备注名 →（粘贴模式）密钥框 → 右侧「取消」+「开始登录／添加」；进行中只剩「取消开通」，命名失败为「取消／接受已有名称／重试保存名称」，判定在导出纯函数 `addAccountPanelView`（`tests/section.test.ts`）。切回网页登录会清空已填密钥。离开设置页取消未完成过程，已登录待命名则接受已有名称；命名失败保留账号，清理失败保留恢复记录并提供手动重试。默认或已有账号的 `login*` 契约继续使用原控制器。
 - **自动打开授权页**：新增、默认和已有账号登录均在首次收到宿主授权地址后通过 `src/client/login-page.ts` 打开新页面，不预先打开空白页；同一尝试的轮询不重复打开，已取消尝试或已卸载的新增账号面板不会因迟到地址打开页面。浏览器可能拦截异步打开，界面始终保留授权链接及手动打开提示；打开失败不取消宿主登录。使用 `noopener,noreferrer` 隔离来源页，不能根据返回 `null` 判断是否拦截。
 - **页面生命期**：`enrollmentWatch({ pageId })` 是持续远端流，先确认就绪再允许 `enrollmentBegin`。所有过程调用带页面身份；宿主将它与实际调用对端共同绑定。单次调用完成不结束过程；页面卸载主动取消并释放流，刷新或关闭由网关流取消信号触发收尾。DSH 的 `OperatorPeer` 是宿主共享作用域，不能用它冒充单个浏览器连接。载体断开不会自动重建原过程。
 - **开通远端契约**：双方共享 `src/enrollment-wire.ts` 的七个严格描述符：`enrollmentBegin`、`enrollmentStatus`、`enrollmentCancel`、`enrollmentName`、`enrollmentRetry`、`enrollmentPending` 和流式 `enrollmentWatch`。前六个返回状态或恢复列表，观察流返回就绪确认；所有输入、输出使用严格编解码器。密钥仅允许在手动开始输入中出现，不进入状态、日志或设置文档。旧宿主缺少该契约时明确提示更新，不回退到旧的页面副作用编排。**状态消息只传语义键**：`EnrollmentState.messageKey` 取 `EnrollmentMessageKey`（22 个：宿主 15 个、页面控制器 7 个），`parseEnrollmentState` 校验枚举成员并拒绝自由文本；文案集中在设置页词典、渲染时才按界面语言取，因此宿主与页面不会各写一份，`phase` 也不必再兼作文案判据（同一 `phase` 对应多种语义，如 `naming` 的「正在保存名称」与「名称保存失败」）。宿主抛出的异常消息不在此列：它们不上屏，页面在所有失败路径都用自己这一侧的键覆盖。
@@ -171,13 +171,26 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   failure cannot block Save. The dot reuses the framework's `StateDot`
   (done/warning/error/idle) instead of a local colour token, and all copy rides
   the `settings.commandcode` namespace (zh is the source of truth).
+  The row pairs that published record with a live probe: `commandcode/probe`
+  (`src/service-probe.ts` + `src/service-probe-wire.ts`) runs HOST-side against
+  the configured API base, because `api.commandcode.ai` sends no CORS header and
+  on a remote-Host setup the browser machine is not the one serving requests.
+  The probe is one unauthenticated GET of the base root (five-second timeout,
+  `redirect: 'manual'`), classified with Upptime's own default expected statuses
+  (2xx/3xx = `ok`, other statuses = `http-error`, with distinct `timeout` and
+  `unreachable` outcomes). It never throws and never claims more than "this Host
+  reached the endpoint just now"; the row renders its own dot and line.
   **Deliberate limits**: the monitor probes only `https://api.commandcode.ai`'s
-  root (HTTP 200), so "operational" does not prove inference works; GitHub
-  throttles the five-minute Actions cron (observed gaps of two to six hours) and
-  `summary.json` is regenerated only once a day, so the row always shows "last
-  checked N ago" and never claims to be real time. Past incidents are GitHub
-  issues, not data files, and are left to the page itself (the row links to it).
-  Pinned by `tests/service-status.test.ts`.
+  root (HTTP 200), so "operational" does not prove inference works; Upptime's
+  `lastUpdated` is the last PUBLISH time, not the last check — the state file is
+  only rewritten when the status changes or when the daily `response-time`
+  workflow forces a commit, and GitHub throttles the five-minute cron into runs
+  every few hours. The row therefore says "official data updated N ago" (never
+  "last check"), adds a publication-lag note past two hours
+  (`SERVICE_STATUS_LAG_WARN_MS`), and leaves real-time answers to the Host
+  probe. Past incidents are GitHub issues, not data files, and are left to the
+  page itself (the row links to it). Pinned by `tests/service-status.test.ts`,
+  `tests/service-probe.test.ts` and the probe codec cases there.
 - **Browser login (`commandcode/loginBegin|loginStatus|loginCancel`)**: the
   settings page's key field can start the official `command-code login` flow
   instead of pasting a key — reverse-engineered from the CLI bundle's
@@ -270,7 +283,7 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   literal-key or unknown entries the page cannot name survive unrelated account edits.
 - **设置页折叠（决策记录第十章第4条，取代 issue #94 的单组折叠）**：五个顶级分组共用 `FoldableGroup`
   （`src/client/section.tsx`）——`h3` 包一个整行按钮，箭头在标题左侧，「刷新」这类分组动作放在按钮外。
-  默认只展开「账户」；页头「全部展开／全部收起」；展开状态存在浏览器本地一个键
+  默认只展开「账户」（页头的「全部展开／全部收起」已按用户要求删除）；展开状态存在浏览器本地一个键
   `@mars-sea/dsh-commandcode-provider/settings-fold`（`src/client/group-fold.ts`，缺失、损坏或存储被禁用时回落
   默认，不进配置文档、不随 profile 同步）。收起的正文用 `hidden` 保留挂载，`aria-controls` 始终有效。
   标题旁摘要徽标展开收起都显示（账户数与异常数、白名单数量、已自定义项数、ZDR／联网搜索开关、服务状态）；
@@ -324,6 +337,20 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   包含基础层隐藏项的显式覆盖。保存冲突或缺少原子写入能力时保留草稿。
   显示全部会选中已加载的目录模型；目录失败不清空已存选择。
 - **字号与校验说明**：页面及面板辅助文字至少 12px；重试次数提示与实际 0～50 次限制一致。
+- **设置页尺寸以设计画布为准（2026-10-21，用户要求「完全按效果图」，取代下面两条中与之冲突的尺寸）**：
+  尺寸逐项取自设计画布的 `cc-kit.css`，颜色映射到 dsw 别名。按钮不再用宿主 `Button` 原语，改为本页自绘的
+  `PageButton`（`cc-btn`：md 32px／14px 字／14px 图标，sm 28px／12px 字，lg 36px 仅保存条；`outline` 即设计稿
+  的浅灰填充次要按钮，`danger` 为错误色实心）；输入框与模型选择器 32px、白底（`bg-layer-1`）、1px `border-l3`、
+  8px 圆角，数字框单位画在框内（`cc-unitBox`，160px）；设置行上下 12px、**行间不画线**，文字与控件间距 24px；
+  分组上下 16px、组间 1px `border-l2`、分组头 36px；账户卡片 1px 描边、卡片头 44px（左内缩 16px）、额度行
+  缩进 32px、展开区 16px；按模型覆盖改为卡片内的小表格（表头 + 模型／值／移除三列）；徽标 20px。实测核对见
+  CHANGELOG。
+- **设置页形状与文字收尾（2026-10-21，实测）**：形状规则「可点的是胶囊，可填的是 8px」——页面内所有宿主
+  `Button` 经 `PageButton` 加 `cc-pill`（全圆角，覆盖宿主的 8／12px）与幽灵按钮的 `cc-quiet`（label-secondary，
+  悬停转 label-primary）；行级下拉与输入框圆角 8px；保存条改为 22px 全圆，与内部 36px 胶囊同心。文字：本页开启
+  灰度抗锯齿，说明、摘要、数字块标签等由 label-tertiary 改为 label-secondary（Models 页卡片共用的 `cc-hint`、
+  `cc-badgeMuted`、`cc-input` 不变）。账户展开区首行是「月额度剩余」大号数字（`cc-balance`，20/600），已购与
+  赠送降为其右侧小字；剩余为 0 时数字标红并提示已购与赠送将无法使用（`usageMonthlyDepleted`）。
 - **设置页对齐宿主原生（2026-10-21，实测）**：行样式取自宿主「通用设置」渲染后的真实样式——行上下 16px、
   每行下方 0.5px `border-l2` 细线（组内最后一行除外）、文字列与控件留 48px；行级下拉与输入框用宿主选择器的
   形状（36px、12px 圆角、`bg-module-platform` 填充、无描边，类 `cc-fieldInput`），数字框单位写在框外并占

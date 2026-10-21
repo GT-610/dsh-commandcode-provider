@@ -31,6 +31,7 @@
 
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsCommandCodeKey } from './locales.ts'
+import type { CommandCodeProbeResult } from '../service-probe-wire.ts'
 
 /** The public status page the row links to. */
 export const STATUS_PAGE_URL = 'https://status.commandcode.ai/'
@@ -58,6 +59,17 @@ export const SERVICE_STATUS_TTL_MS = 5 * 60 * 1000
 
 /** Abort a hung source rather than keep the row waiting; two sources at worst. */
 export const SERVICE_STATUS_FETCH_TIMEOUT_MS = 5_000
+
+/**
+ * How old the published record may get before the row says it may lag.
+ *
+ * Two hours is deliberately below the observed cadence: Upptime only rewrites
+ * its state file on a status change or the daily forced commit, so a stable
+ * service legitimately shows a record from several hours ago. The line exists
+ * to explain that instead of letting "operational" look like a live verdict;
+ * the local probe below is the real-time half.
+ */
+export const SERVICE_STATUS_LAG_WARN_MS = 2 * 60 * 60 * 1000
 
 /** The `localStorage` key holding the last successful snapshot. */
 export const SERVICE_STATUS_CACHE_KEY = '@mars-sea/dsh-commandcode-provider/service-status'
@@ -111,18 +123,51 @@ export interface StateFacts {
   code?: number | undefined
 }
 
+/**
+ * The live half's client-side lifecycle, as the settings hook hands it to the
+ * view. `checking` is the first probe still in flight; `unavailable` means the
+ * Host serves no probe endpoint (an older Host) or the call itself failed.
+ */
+export type ServiceProbe =
+  | { kind: 'checking' }
+  | { kind: 'unavailable' }
+  | { kind: 'result'; result: CommandCodeProbeResult }
+
+/** The tone of the local-connectivity dot. */
+export type ServiceLocalTone = 'muted' | 'ok' | 'error'
+
+/** A verdict's dot tone, mapped onto the harness StateDot by the page. */
+export type ServiceTone = 'checking' | 'ok' | 'warn' | 'error' | 'idle'
+
 /** What the row renders; every string is already localized. */
 export interface ServiceStatusView {
   level: ServiceLevel
-  /** The first check has not finished yet (no cache to paint from). */
+  /** The first published-data check has not finished yet (no cache to paint from). */
   checking: boolean
-  /** `服务正常` / `部分降级` / `服务中断` / `状态未知` / `正在检查…`. */
+  /** The published verdict: `服务正常` / `部分降级` / `服务中断` / `状态未知` / `正在检查…`. */
   label: string
-  /** Uptime and response aggregates; absent when the source published none. */
+  /** The published verdict's dot tone. */
+  officialTone: ServiceTone
+  /**
+   * The one verdict the group heading shows. A failed local probe outranks the
+   * published record — the page cannot reach the service from here, whatever
+   * the status page says — and reads as a warning; otherwise it is the
+   * published verdict.
+   */
+  badge: { label: string; tone: ServiceTone }
+  /** Compact aggregates (`可用率 7 天 100% / 30 天 99.98% · 平均响应 114 ms`); absent when none were published. */
   detail?: string | undefined
-  /** The monitor's last check as a relative time. */
-  meta?: string | undefined
-  /** A failure/staleness note; absent on a live, successful check. */
+  /** The published record's age (`8 小时前更新`), not a live check. */
+  updated?: string | undefined
+  /** The publication-lag explanation, once the record is old enough; the page shows it as the age's tooltip. */
+  lag?: string | undefined
+  /** The Host probe of the configured API base, run just now (`连通正常 · 188 ms`). */
+  local: string
+  /** Which colour the local-connectivity dot takes. */
+  localTone: ServiceLocalTone
+  /** The local probe is still in flight (dot breathes instead of sitting idle). */
+  localChecking: boolean
+  /** A failure/staleness note for the published record; absent on a live check. */
   notice?: string | undefined
   /** Why the numbers can lag, shown as the row's tooltip. */
   hint: string
@@ -328,52 +373,120 @@ export async function checkServiceStatus(options: {
   return { level: 'unknown', live: false, stale: false, fetchedAt: now }
 }
 
-/** The relative check age: `刚刚检测` / N minutes / N hours / N days ago. */
-function checkedCopy(checkedAt: number, now: number, t: Translate<SettingsCommandCodeKey>): string {
+/** The published record's age: `官方数据更新：刚刚` / N minutes / hours / days. */
+function updatedCopy(checkedAt: number, now: number, t: Translate<SettingsCommandCodeKey>): string {
   const age = Math.max(0, now - checkedAt)
-  if (age < 60_000) return t('serviceStatusCheckedJustNow')
+  if (age < 60_000) return t('serviceStatusUpdatedJustNow')
   const minutes = Math.floor(age / 60_000)
-  if (minutes < 60) return t('serviceStatusCheckedMinutes', { count: minutes })
+  if (minutes < 60) return t('serviceStatusUpdatedMinutes', { count: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return t('serviceStatusCheckedHours', { count: hours })
-  return t('serviceStatusCheckedDays', { count: Math.floor(hours / 24) })
+  if (hours < 24) return t('serviceStatusUpdatedHours', { count: hours })
+  return t('serviceStatusUpdatedDays', { count: Math.floor(hours / 24) })
+}
+
+/** The publication-lag explanation, shown once the record is old enough. */
+function lagCopy(
+  checkedAt: number | undefined,
+  now: number,
+  t: Translate<SettingsCommandCodeKey>,
+): string | undefined {
+  if (checkedAt === undefined) return undefined
+  return now - checkedAt >= SERVICE_STATUS_LAG_WARN_MS ? t('serviceStatusLag') : undefined
+}
+
+/** The local-connectivity line and its dot tone. */
+function localCopy(
+  probe: ServiceProbe,
+  t: Translate<SettingsCommandCodeKey>,
+): { text: string; tone: ServiceLocalTone } {
+  if (probe.kind === 'checking') return { text: t('serviceStatusLocalChecking'), tone: 'muted' }
+  if (probe.kind === 'unavailable') return { text: t('serviceStatusLocalUnavailable'), tone: 'muted' }
+  const { result } = probe
+  if (result.outcome === 'ok') {
+    return { text: t('serviceStatusLocalOk', { latency: result.latencyMs }), tone: 'ok' }
+  }
+  if (result.outcome === 'http-error') {
+    return { text: t('serviceStatusLocalHttp', { status: result.status }), tone: 'error' }
+  }
+  if (result.outcome === 'timeout') return { text: t('serviceStatusLocalTimeout'), tone: 'error' }
+  return { text: t('serviceStatusLocalUnreachable'), tone: 'error' }
+}
+
+/**
+ * A published uptime without its padding zeros: the summary prints two
+ * decimals verbatim (`100.00%`), which reads as noise, so `100.00%` becomes
+ * `100%` and `99.90%` becomes `99.9%`; anything that is not a plain percentage
+ * is shown as published.
+ */
+export function compactUptime(value: string): string {
+  const match = /^(\d+)(?:\.(\d+))?%$/.exec(value.trim())
+  if (match === null) return value
+  const fraction = (match[2] ?? '').replace(/0+$/, '')
+  return fraction === '' ? `${match[1]}%` : `${match[1]}.${fraction}%`
 }
 
 /** The aggregate line, or undefined when this check carried no aggregates. */
 function detailCopy(snapshot: ServiceStatusSnapshot, t: Translate<SettingsCommandCodeKey>): string | undefined {
   const parts: string[] = []
+  const uptimes: string[] = []
   if (snapshot.uptimeWeek !== undefined) {
-    parts.push(t('serviceStatusUptimeWeek', { value: snapshot.uptimeWeek }))
+    uptimes.push(t('serviceStatusUptimeWeek', { value: compactUptime(snapshot.uptimeWeek) }))
   }
   if (snapshot.uptimeMonth !== undefined) {
-    parts.push(t('serviceStatusUptimeMonth', { value: snapshot.uptimeMonth }))
+    uptimes.push(t('serviceStatusUptimeMonth', { value: compactUptime(snapshot.uptimeMonth) }))
   }
+  if (uptimes.length > 0) parts.push(t('serviceStatusUptime', { value: uptimes.join(' / ') }))
   if (snapshot.responseTimeWeekMs !== undefined) {
     parts.push(t('serviceStatusResponseWeek', { value: `${Math.round(snapshot.responseTimeWeekMs)} ms` }))
   }
   return parts.length === 0 ? undefined : parts.join(' · ')
 }
 
+/** The heading verdict: a failed local probe first, else the published one. */
+function badgeOf(
+  probe: ServiceProbe,
+  official: { label: string; tone: ServiceTone },
+  t: Translate<SettingsCommandCodeKey>,
+): { label: string; tone: ServiceTone } {
+  if (probe.kind !== 'result' || probe.result.outcome === 'ok') return official
+  const { outcome } = probe.result
+  const label = outcome === 'http-error' ? t('serviceStatusBadgeLocalHttp')
+    : outcome === 'timeout' ? t('serviceStatusBadgeLocalTimeout')
+      : t('serviceStatusBadgeLocalUnreachable')
+  return { label, tone: 'warn' }
+}
+
 /**
- * Project a snapshot into the row's copy. Pure and React-free so the labels,
- * the age buckets and the failure wording are pinned by node tests rather than
- * by rendering.
+ * Project a snapshot + the live probe into the row's copy. Pure and React-free
+ * so the labels, the age buckets, the lag rule and the failure wording are
+ * pinned by node tests rather than by rendering.
  *
- * `snapshot === undefined` means the first check is still in flight (the hook
- * paints the cache first, so this only shows on a cold cache).
+ * `snapshot === undefined` means the first published-data check is still in
+ * flight (the hook paints the cache first, so this only shows on a cold cache).
+ * The probe is independent: the row always renders both halves, and the local
+ * half never borrows the published verdict.
  */
 export function serviceStatusView(
   snapshot: ServiceStatusSnapshot | undefined,
+  probe: ServiceProbe,
   t: Translate<SettingsCommandCodeKey>,
   now: number,
 ): ServiceStatusView {
+  const local = localCopy(probe, t)
+  const hint = t('serviceStatusHint')
+
   if (snapshot === undefined) {
+    const label = t('serviceStatusChecking')
     return {
       level: 'unknown',
       checking: true,
-      label: t('serviceStatusChecking'),
-      detail: t('serviceStatusHint'),
-      hint: t('serviceStatusHint'),
+      label,
+      officialTone: 'checking',
+      badge: badgeOf(probe, { label, tone: 'checking' }, t),
+      local: local.text,
+      localTone: local.tone,
+      localChecking: probe.kind === 'checking',
+      hint,
       linkLabel: t('serviceStatusOpen'),
     }
   }
@@ -386,17 +499,27 @@ export function serviceStatusView(
   const notice = snapshot.live
     ? undefined
     : snapshot.stale ? t('serviceStatusStale') : t('serviceStatusUnavailable')
+  const officialTone: ServiceTone = snapshot.level === 'up' ? 'ok'
+    : snapshot.level === 'degraded' ? 'warn'
+      : snapshot.level === 'down' ? 'error'
+        : 'idle'
 
   return {
     level: snapshot.level,
     checking: false,
     label,
+    officialTone,
+    badge: badgeOf(probe, { label, tone: officialTone }, t),
     detail: detailCopy(snapshot, t),
-    meta: snapshot.checkedAt === undefined
-      ? t('serviceStatusCheckedUnknown')
-      : checkedCopy(snapshot.checkedAt, now, t),
+    updated: snapshot.checkedAt === undefined
+      ? t('serviceStatusUpdatedUnknown')
+      : updatedCopy(snapshot.checkedAt, now, t),
+    lag: lagCopy(snapshot.checkedAt, now, t),
+    local: local.text,
+    localTone: local.tone,
+    localChecking: probe.kind === 'checking',
     notice,
-    hint: t('serviceStatusHint'),
+    hint,
     linkLabel: t('serviceStatusOpen'),
   }
 }

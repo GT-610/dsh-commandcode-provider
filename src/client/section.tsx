@@ -16,9 +16,8 @@
  * right) inside the staged form the floating save bar writes.
  *
  * All five groups fold from their own heading (`FoldableGroup`, 决策记录第十章
- * 第4条): Accounts opens by default, the rest start folded, the header offers
- * expand-all / collapse-all, and the choice is remembered per browser
- * (./group-fold.ts). A folded heading still summarizes its group, and anything
+ * 第4条): Accounts opens by default, the rest start folded, and the choice is
+ * remembered per browser (./group-fold.ts). A folded heading still summarizes its group, and anything
  * inside it that blocks the save is reported on the heading; the save bar's
  * Locate action opens that group and focuses the invalid field.
  *
@@ -26,8 +25,8 @@
  * class-prefixed `cc-` to stay local.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Button, Menu, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { Menu, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry, StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CommandCodeCredits } from '../adapter.ts'
@@ -50,8 +49,9 @@ import {
   readCachedServiceStatus,
   serviceStatusView,
 } from './service-status.ts'
-import type { ServiceStatusSnapshot, ServiceStatusView } from './service-status.ts'
-import { allExpanded, expandGroups, localStorageFoldStore, setAllGroups, type FoldGroup, type FoldState } from './group-fold.ts'
+import type { ServiceProbe, ServiceStatusSnapshot, ServiceStatusView, ServiceTone } from './service-status.ts'
+import type { CommandCodeProbeResult } from '../service-probe-wire.ts'
+import { expandGroups, localStorageFoldStore, type FoldGroup, type FoldState } from './group-fold.ts'
 
 /**
  * The page's line icons, one single-colour 16px stroke set so every glyph in
@@ -59,8 +59,9 @@ import { allExpanded, expandGroups, localStorageFoldStore, setAllGroups, type Fo
  * "×" or "↗"). The colour comes from `currentColor`, i.e. from the button,
  * link or notice tone the icon sits in.
  */
-type IconName = 'chevron' | 'more' | 'chart' | 'arrowRight' | 'check' | 'reset' | 'close' | 'refresh' | 'plus' | 'external' | 'info' | 'warn' | 'error' | 'lock'
+type IconName = 'swap' | 'chevron' | 'more' | 'chart' | 'arrowRight' | 'check' | 'reset' | 'close' | 'refresh' | 'plus' | 'external' | 'info' | 'warn' | 'error' | 'lock'
 const ICON_PATHS: Record<IconName, ReactNode> = {
+  swap: <><path d="M2.5 5h9l-2-2" /><path d="M13.5 11h-9l2 2" /></>,
   chevron: <path d="M4 6l4 4 4-4" />,
   more: <><circle cx="8" cy="3.5" r=".9" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none" /><circle cx="8" cy="12.5" r=".9" fill="currentColor" stroke="none" /></>,
   chart: <><path d="M2.5 13.5h11" /><path d="M4.5 13.5V8.5M8 13.5V4.5M11.5 13.5V6.5" /></>,
@@ -82,6 +83,39 @@ function Icon({ name, className = 'cc-icon' }: { name: IconName; className?: str
     <svg className={className} viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {ICON_PATHS[name]}
     </svg>
+  )
+}
+
+/**
+ * The page's button, drawn to the design canvas (cc-kit.css) rather than taken
+ * from the harness primitive, whose 36px / 12px-corner md size and outline
+ * secondary read heavier than the design: every button is a capsule; md is
+ * 32px (14px text, 14px icon), sm 28px (12px text), lg 36px (the save bar);
+ * `primary` is the brand fill, `outline` the design's quiet grey fill, `ghost`
+ * label-secondary text on no fill, `danger` the error fill for a destructive
+ * confirm. Native button attributes pass through; `type` defaults to button.
+ */
+type PageButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger'
+const PAGE_BUTTON_VARIANT: Record<PageButtonVariant, string> = {
+  primary: 'cc-btnPrimary',
+  outline: 'cc-btnSecondary',
+  ghost: 'cc-btnGhost',
+  danger: 'cc-btnDanger',
+}
+const PAGE_BUTTON_SIZE = { sm: ' cc-btnSm', md: '', lg: ' cc-btnLg' } as const
+
+function PageButton({ variant = 'ghost', size = 'md', icon, className, type = 'button', children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: PageButtonVariant
+  size?: keyof typeof PAGE_BUTTON_SIZE
+  /** Leading line icon; drawn at the button's icon size. */
+  icon?: ReactNode
+}) {
+  const classes = `cc-btn ${PAGE_BUTTON_VARIANT[variant]}${PAGE_BUTTON_SIZE[size]}${className === undefined ? '' : ` ${className}`}`
+  return (
+    <button {...rest} type={type} className={classes}>
+      {icon}
+      {children}
+    </button>
   )
 }
 
@@ -134,6 +168,15 @@ export interface CommandCodeSettingsProps {
   beginLogin(targetRef?: string): void
   cancelLogin(): void
   createEnrollment(): AccountEnrollmentController
+  /**
+   * The status row's live half: one Host-side probe of the configured API base
+   * (`commandcode/probe`). A Host older than that endpoint answers the failure
+   * branch, which the row renders as "unknown" rather than throwing.
+   */
+  probeService(): Promise<
+    | { ok: true; value: CommandCodeProbeResult }
+    | { ok: false; error: { message: string } }
+  >
   renameAccount(ref: string, label: string): Promise<boolean>
   removeAccount(ref: string): Promise<boolean>
   retryCredentialCleanup(ref: string): Promise<boolean>
@@ -357,8 +400,8 @@ function Field({
   output?: boolean
   wide?: boolean
   /**
-   * Unit shown beside a number box (seconds, tokens, …), as the General page's
-   * font-size field does; the label no longer repeats it.
+   * Unit drawn inside the number box, right of the value (seconds, tokens, …),
+   * as the design's field does; the label no longer repeats it.
    */
   unit?: string
   /** What an empty field means — the default it falls back to. */
@@ -367,11 +410,11 @@ function Field({
   onReset(): void
   t: Translate<SettingsCommandCodeKey>
 }) {
-  const shape = unit === undefined ? (wide ? 'cc-rowInputWide' : 'cc-rowInput') : 'cc-fieldNumber'
+  const width = wide ? 'cc-rowInputWide' : 'cc-rowInput'
   const input = (
     <input
       id={id}
-      className={`cc-fieldInput ${shape}${state.invalid ? ' cc-fieldInputInvalid' : ''}`}
+      className={unit === undefined ? `cc-fieldInput ${width}${state.invalid ? ' cc-fieldInputInvalid' : ''}` : 'cc-fieldInput'}
       type="text"
       inputMode={decimal ? 'decimal' : numeric ? 'numeric' : undefined}
       aria-invalid={state.invalid || undefined}
@@ -393,7 +436,7 @@ function Field({
       control={
         <>
           {unit === undefined ? input : (
-            <span className="cc-unitField">
+            <span className={state.invalid ? 'cc-unitBox cc-unitBoxInvalid' : 'cc-unitBox'}>
               {input}
               <span className="cc-unit">{unit}</span>
             </span>
@@ -553,7 +596,7 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
         <div className="cc-usageHead">
           <h4 className="cc-usageTitle">{entry.label}</h4>
           {accountName !== '' ? <span className="cc-usageAccount">{accountName}</span> : null}
-          {planName !== '' ? <span className="cc-badgeMuted">{planName}</span> : null}
+          {planName !== '' ? <span className="cc-badge cc-badgeOutline">{planName}</span> : null}
         </div>
       ) : null}
       {planStatus !== '' ? <p className="cc-usagePlanStatus">{planStatus}</p> : null}
@@ -572,6 +615,28 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
           ) : null}
         </Notice>
       ) : null}
+
+      {/* The monthly remainder leads the details: it is the balance that
+          decides whether requests go through, and once it reaches zero the
+          purchased and free balances can no longer be spent — so those two
+          ride under it as context, not beside it as peers. `monthlyCredits` is
+          what is LEFT (see MonthlyBalance); an omitted figure reads "—". */}
+      {credits !== undefined ? (() => {
+        const monthlyKnown = credits.monthlyReported !== false
+        const depleted = monthlyKnown && credits.monthlyCredits <= 0
+        return (
+          <div className={depleted ? 'cc-balance cc-balanceEmpty' : 'cc-balance'}>
+            <div className="cc-balanceMain">
+              <span className="cc-balanceLabel">{t('usageMonthlyLeft')}</span>
+              <span className="cc-balanceValue">{monthlyKnown ? formatMoney(Math.max(0, credits.monthlyCredits)) : '—'}</span>
+            </div>
+            <span className="cc-balanceSub">
+              {`${t('usagePurchased')} ${credits.purchasedReported === false ? '—' : formatMoney(credits.purchasedCredits)} · ${t('usageFree')} ${credits.freeReported === false ? '—' : formatMoney(credits.freeCredits)}`}
+            </span>
+            {depleted ? <p className="cc-balanceNote" role="status">{t('usageMonthlyDepleted')}</p> : null}
+          </div>
+        )
+      })() : null}
 
       {report.usage !== undefined ? (
         <p className="cc-usageUpdated">{usagePeriod ? `${t('usageBillingPeriod')} ${usagePeriod}` : t('usagePeriodUnknown')}</p>
@@ -604,19 +669,6 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
             sub={`${formatTokensCompact(report.usage.totalTokensIn)} ${t('usageTokensIn')} / ${formatTokensCompact(report.usage.totalTokensOut)} ${t('usageTokensOut')}`}
           />
         </div>
-      ) : null}
-
-      {/* Balances are secondary to the activity tiles: one quiet line instead
-          of a second, three-column tile row that never lined up with the four
-          above it. An omitted balance reads "—", as before. */}
-      {credits !== undefined ? (
-        <p className="cc-usageBalances">
-          {[
-            `${t('usageMonthly')} ${credits.monthlyReported === false ? '—' : formatMoney(credits.monthlyCredits)}`,
-            `${t('usagePurchased')} ${credits.purchasedReported === false ? '—' : formatMoney(credits.purchasedCredits)}`,
-            `${t('usageFree')} ${credits.freeReported === false ? '—' : formatMoney(credits.freeCredits)}`,
-          ].join(' · ')}
-        </p>
       ) : null}
 
       {credits?.fiveHour !== undefined || credits?.weekly !== undefined ? (
@@ -732,12 +784,12 @@ function ModelMultiSelect({ id, selected: committed, catalog, disabled, deferCom
           <span className="cc-checkName">{option.label}</span>
           {option.stale ? <span className="cc-badge">{t('modelStale')}</span> : null}
           {option.allowance !== undefined ? (
-            <span className="cc-badgeMuted" title={t('modelAllowanceTitle')}>
+            <span className="cc-badge cc-badgeOutline" title={t('modelAllowanceTitle')}>
               {t('modelAllowance', { amount: option.allowance })}
             </span>
           ) : null}
           {!selected.includes(option.value) && ownerOf?.(option.value) !== undefined ? (
-            <span className="cc-badgeMuted">{t('accountModelOwner', { name: ownerOf(option.value)! })}</span>
+            <span className="cc-badge cc-badgeOutline">{t('accountModelOwner', { name: ownerOf(option.value)! })}</span>
           ) : null}
         </span>
       ),
@@ -776,7 +828,7 @@ function ModelMultiSelect({ id, selected: committed, catalog, disabled, deferCom
             <span className="cc-selectorText">
               {selected.length === 0 ? t('modelPick') : t('modelCount', { count: selected.length })}
             </span>
-            <span className="cc-selectorCaret" aria-hidden="true" />
+            <Icon name="chevron" className="cc-icon cc-selectorChevron" />
           </button>
           {open ? (
             <input
@@ -833,19 +885,19 @@ function VisibleModelsRow({ t, state, disabled, onSelect, onClear }: {
       control={
         <>
           {catalogReady && staleIds.length > 0 ? (
-            <Button
+            <PageButton
               variant="ghost"
               size="sm"
               disabled={disabled}
               onClick={() => onSelect(state.visibleModels.filter((id) => !staleIds.includes(id)))}
             >
               {t('visibleModelsCleanStale', { count: staleIds.length })}
-            </Button>
+            </PageButton>
           ) : null}
           {!state.visibleModelsAll ? (
-            <Button variant="ghost" size="sm" disabled={disabled} onClick={onClear}>
+            <PageButton variant="ghost" size="sm" disabled={disabled} onClick={onClear}>
               {t('visibleModelsShowAll')}
-            </Button>
+            </PageButton>
           ) : null}
           <ModelMultiSelect
             id="cc-visible-models"
@@ -1093,70 +1145,75 @@ function ContextCard({ state, disabled, t, onEdit, onReset, onOverrides }: FormC
         title={t('contextOverridesTitle')}
         description={<p>{t('contextOverridesHint')}</p>}
         control={
-          <Button
+          <PageButton
             variant="outline"
             size="sm"
-            icon={<Icon name="plus" />}
+            icon={<Icon name="plus" className="cc-icon cc-btnIcon" />}
             disabled={disabled || available.length === 0}
             onClick={addRow}
           >
             {t('contextOverrideAdd')}
-          </Button>
+          </PageButton>
         }
       />
       {/* Only a real fetch failure explains the disabled add button; the
           catalog still loading does not (it may yet land). */}
       {state.catalogFailed ? <p className="cc-groupDesc">{t('contextOverrideNoCatalog')}</p> : null}
+      {/* The overrides are a small table in a card, as the design draws them:
+          a head row over a model / value / remove grid, one line per override. */}
       {rows.length > 0 ? (
-        // Column heads for the row trio below; the third cell is the remove
-        // button's width, so the value label stays optically over its input.
-        <div className="cc-contextHead">
-          <span className="cc-contextHeadModel">{t('contextOverrideModel')}</span>
-          <span className="cc-contextHeadValue">{t('contextOverrideValue')}</span>
-          <span className="cc-contextHeadGap" aria-hidden="true" />
+        <div className="cc-contextTable">
+          <div className="cc-contextHead">
+            <span>{t('contextOverrideModel')}</span>
+            <span>{t('contextOverrideValue')}</span>
+            <span aria-hidden="true" />
+          </div>
+          {rows.map((row) => (
+            <div className="cc-contextItem" key={row.model}>
+              <span className="cc-contextSelect">
+                <select
+                  className="cc-fieldInput cc-contextModel"
+                  value={row.model}
+                  aria-label={t('contextOverrideModel')}
+                  disabled={disabled}
+                  onChange={(event) => setModel(row.model, event.target.value)}
+                >
+                  <option value={row.model}>{labelOf(row.model)}</option>
+                  {available.map((model) => (
+                    <option key={model.id} value={model.id}>{labelOf(model.id)}</option>
+                  ))}
+                </select>
+                {/* The plugin's own caret instead of the platform arrow: the
+                    native one renders in whatever style the OS chooses, which is
+                    exactly the inconsistency this card should not carry. */}
+                <Icon name="chevron" className="cc-icon cc-contextCaret" />
+              </span>
+              <span className={row.invalid ? 'cc-unitBox cc-unitBoxInvalid' : 'cc-unitBox'}>
+                <input
+                  className="cc-fieldInput"
+                  type="text"
+                  aria-label={t('contextOverrideValue')}
+                  aria-invalid={row.invalid || undefined}
+                  value={row.text}
+                  disabled={disabled}
+                  onChange={(event) => setText(row.model, event.target.value)}
+                />
+                <span className="cc-unit">{t('unitTokens')}</span>
+              </span>
+              <button
+                type="button"
+                className="cc-iconButton"
+                aria-label={t('contextOverrideRemove')}
+                disabled={disabled}
+                onClick={() => removeRow(row.model)}
+              >
+                <Icon name="close" />
+              </button>
+              {row.invalid ? <p className="cc-rowError cc-contextError">{invalidCopy(row.invalidReason, t, 'context')}</p> : null}
+            </div>
+          ))}
         </div>
       ) : null}
-      {rows.map((row) => (
-        <div className="cc-contextItem" key={row.model}>
-          <span className="cc-contextSelect">
-            <select
-              className="cc-fieldInput cc-contextModel"
-              value={row.model}
-              aria-label={t('contextOverrideModel')}
-              disabled={disabled}
-              onChange={(event) => setModel(row.model, event.target.value)}
-            >
-              <option value={row.model}>{labelOf(row.model)}</option>
-              {available.map((model) => (
-                <option key={model.id} value={model.id}>{labelOf(model.id)}</option>
-              ))}
-            </select>
-            {/* The plugin's own caret instead of the platform arrow: the
-                native one renders in whatever style the OS chooses, which is
-                exactly the inconsistency this card should not carry. */}
-            <span className="cc-contextCaret" aria-hidden="true" />
-          </span>
-          <input
-            className={`cc-fieldInput cc-fieldNumber cc-contextValue${row.invalid ? ' cc-fieldInputInvalid' : ''}`}
-            type="text"
-            aria-label={t('contextOverrideValue')}
-            aria-invalid={row.invalid || undefined}
-            value={row.text}
-            disabled={disabled}
-            onChange={(event) => setText(row.model, event.target.value)}
-          />
-          <button
-            type="button"
-            className="cc-iconButton"
-            aria-label={t('contextOverrideRemove')}
-            disabled={disabled}
-            onClick={() => removeRow(row.model)}
-          >
-            <Icon name="close" />
-          </button>
-          {row.invalid ? <p className="cc-rowError cc-contextError">{invalidCopy(row.invalidReason, t, 'context')}</p> : null}
-        </div>
-      ))}
     </>
   )
 }
@@ -1190,20 +1247,44 @@ function PrivacyCard({ state, disabled, t, onEdit, onReset, expanded, onToggle }
 }
 
 /**
- * The service-status row: the official status page's public probe data, read
- * through ./service-status.ts (source order, cache TTL and every degradation
- * rule live there). It is display-only — it writes no setting and never blocks
- * Save; the link opens the page for the full history and incidents.
+ * The service-status row: the official status page's published record and the
+ * Host's live probe of the configured API base, both projected by
+ * ./service-status.ts (source order, cache TTL, the lag rule and every
+ * degradation path live there). It is display-only — it writes no setting and
+ * never blocks Save; the link opens the page for the full history.
  */
 function ServiceStatusRow({ view, t }: { view: ServiceStatusView; t: Translate<SettingsCommandCodeKey> }) {
+  // Two sources, one line each, so the published record and this machine's
+  // own probe never read as one fact: "Official" carries the verdict, the
+  // aggregates and the record's age (the lag explanation is that age's
+  // tooltip, not a standing line); "This device" carries the probe. The
+  // verdict is not repeated as a tag here — the group heading already shows it.
   return (
     <SettingRow
       title={t('serviceStatusTitle')}
-      tag={<ServiceStatusBadge view={view} />}
       description={
         <>
-          {view.detail !== undefined ? <p>{view.detail}</p> : null}
-          {view.meta !== undefined ? <p>{view.meta}</p> : null}
+          <div className="cc-statusLines">
+            <span className="cc-statusKey">{t('serviceStatusOfficial')}</span>
+            <span className="cc-statusValue">
+              <StateDot state={toneDot(view.officialTone)} size={8} />
+              <span className="cc-statusVerdict">{view.label}</span>
+              {view.detail !== undefined || view.updated !== undefined ? (
+                // One wrapping text run: a no-break space glues each "·" to the
+                // word before it, so a wrapped line never starts with a dot.
+                <span className="cc-statusMeta">
+                  {view.detail}
+                  {view.detail !== undefined && view.updated !== undefined ? '\u00a0· ' : null}
+                  {view.updated !== undefined ? <span title={view.lag ?? view.hint}>{view.updated}</span> : null}
+                </span>
+              ) : null}
+            </span>
+            <span className="cc-statusKey">{t('serviceStatusLocal')}</span>
+            <span className="cc-statusValue">
+              <StateDot state={localDotState(view)} size={8} />
+              <span className={view.localTone === 'error' ? 'cc-statusVerdict cc-statusBad' : 'cc-statusVerdict'}>{view.local}</span>
+            </span>
+          </div>
           {view.notice !== undefined ? <p className="cc-statusNotice">{view.notice}</p> : null}
         </>
       }
@@ -1222,17 +1303,31 @@ function ServiceStatusRow({ view, t }: { view: ServiceStatusView; t: Translate<S
  * success/warn/error tokens, so the colours are the design system's own.
  */
 function ServiceStatusBadge({ view }: { view: ServiceStatusView }) {
-  const dot: StateDotState = view.checking ? 'ongoing'
-    : view.level === 'up' ? 'done'
-      : view.level === 'degraded' ? 'warning'
-        : view.level === 'down' ? 'error'
-          : 'idle'
   return (
     <span className="cc-statusBadge" title={view.hint}>
-      <StateDot state={dot} />
-      <span className="cc-statusLabel">{view.label}</span>
+      <StateDot state={toneDot(view.badge.tone)} />
+      <span className={view.badge.tone === 'warn' || view.badge.tone === 'error' ? 'cc-statusLabel cc-statusBad' : 'cc-statusLabel'}>{view.badge.label}</span>
     </span>
   )
+}
+
+/** A view tone on the harness StateDot. */
+function toneDot(tone: ServiceTone): StateDotState {
+  return tone === 'ok' ? 'done'
+    : tone === 'warn' ? 'warning'
+      : tone === 'error' ? 'error'
+        : tone === 'checking' ? 'ongoing'
+          : 'idle'
+}
+
+/**
+ * The local probe's dot: done/error once it answered, breathing while the
+ * request is in flight, idle when the Host offers no probe at all.
+ */
+function localDotState(view: ServiceStatusView): StateDotState {
+  if (view.localTone === 'ok') return 'done'
+  if (view.localTone === 'error') return 'error'
+  return view.localChecking ? 'ongoing' : 'idle'
 }
 
 /**
@@ -1240,10 +1335,11 @@ function ServiceStatusBadge({ view }: { view: ServiceStatusView }) {
  * status snapshot comes from the page, which probes once per open even while
  * this group is folded — its heading shows the verdict either way.
  */
-function IntegrationsCard({ state, disabled, t, onEdit, onReset, expanded, onToggle, status }: FormCardProps & FoldProps & {
+function IntegrationsCard({ state, disabled, t, onEdit, onReset, expanded, onToggle, status, probe }: FormCardProps & FoldProps & {
   status: ServiceStatusSnapshot | undefined
+  probe: ServiceProbe
 }) {
-  const view = serviceStatusView(status, t, Date.now())
+  const view = serviceStatusView(status, probe, t, Date.now())
   return (
     <FoldableGroup
       id="integrations"
@@ -1551,13 +1647,13 @@ function InlineInput({ id, label, secret, initial, placeholder, confirmLabel, di
       />
       <div className="cc-inlineActions">
         {secret && value !== '' ? (
-          <Button variant="ghost" size="sm" type="button" onClick={() => setVisible((shown) => !shown)}>
+          <PageButton variant="ghost" size="sm" type="button" onClick={() => setVisible((shown) => !shown)}>
             {visible ? t('hide') : t('show')}
-          </Button>
+          </PageButton>
         ) : null}
         <span className="cc-spacer" />
-        <Button variant="ghost" size="sm" type="button" onClick={onCancel}>{t('cancel')}</Button>
-        <Button variant="primary" size="sm" type="submit" disabled={!ready || disabled}>{confirmLabel}</Button>
+        <PageButton variant="ghost" size="sm" type="button" onClick={onCancel}>{t('cancel')}</PageButton>
+        <PageButton variant="primary" size="sm" type="submit" disabled={!ready || disabled}>{confirmLabel}</PageButton>
       </div>
     </form>
   )
@@ -1581,8 +1677,8 @@ function ConfirmBar({ text, confirmLabel, disabled, t, onConfirm, onCancel }: {
       title={text}
       actions={
         <>
-          <Button variant="outline" size="sm" className="cc-dangerButton" disabled={disabled} onClick={onConfirm}>{confirmLabel}</Button>
-          <Button variant="ghost" size="sm" onClick={onCancel}>{t('cancel')}</Button>
+          <PageButton variant="danger" size="sm" disabled={disabled} onClick={onConfirm}>{confirmLabel}</PageButton>
+          <PageButton variant="ghost" size="sm" onClick={onCancel}>{t('cancel')}</PageButton>
         </>
       }
     />
@@ -1679,10 +1775,10 @@ function AccountItem({ row, rows, state, usage, login, disabled, pinned, t, acti
           <span className={statusDotClass(row)} title={statusDotTitle(row, t)} aria-hidden="true" />
           <span className="cc-accountName">{row.label}</span>
           {accountName !== '' && accountName !== row.label ? <span className="cc-usageAccount">{accountName}</span> : null}
-          {planName !== '' ? <span className="cc-badgeMuted">{planName}</span> : null}
+          {planName !== '' ? <span className="cc-badge cc-badgeOutline">{planName}</span> : null}
           {entry?.active && multi ? <span className="cc-badge cc-badgeOk">{t('usageActive')}</span> : null}
           {pinned ? <span className="cc-badge">{t('accountStatusPinned')}</span> : null}
-          {!row.credentialKnown || !row.configured ? <span className="cc-badgeMuted">{t(row.credentialKnown ? 'apiKeyUnset' : 'writeStateUnknown')}</span> : null}
+          {!row.credentialKnown || !row.configured ? <span className="cc-badge cc-badgeOutline">{t(row.credentialKnown ? 'apiKeyUnset' : 'writeStateUnknown')}</span> : null}
           {entry?.mark === 'invalid-credential' ? <span className="cc-badge cc-badgeError">{t('usageInvalidKey')}</span> : null}
           {entry !== undefined && entry.mark !== 'invalid-credential' && (entry.cooldownUntil > 0 || entry.mark === 'rate-limit') ? (
             <span className="cc-badge cc-badgeWarn">
@@ -1734,10 +1830,10 @@ function AccountItem({ row, rows, state, usage, login, disabled, pinned, t, acti
           icon={row.keyWritable ? 'info' : 'lock'}
           actions={keyActions ? (
             <>
-              <Button variant="primary" size="sm" disabled={loginBusy || busyElsewhere} onClick={() => actions.beginLogin(loginTarget)}>
+              <PageButton variant="primary" size="sm" disabled={loginBusy || busyElsewhere} onClick={() => actions.beginLogin(loginTarget)}>
                 {t('accountAddLogin')}
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setMode('key')}>{t('accountAddPaste')}</Button>
+              </PageButton>
+              <PageButton variant="outline" size="sm" onClick={() => setMode('key')}>{t('accountAddPaste')}</PageButton>
             </>
           ) : undefined}
         >
@@ -1867,7 +1963,7 @@ function LoginStatus({ state, t, onCancel }: {
   return (
     <Notice
       tone={tone}
-      actions={link !== null || busy ? <>{link}{busy ? <Button variant="ghost" size="sm" onClick={onCancel}>{t('loginCancel')}</Button> : null}</> : undefined}
+      actions={link !== null || busy ? <>{link}{busy ? <PageButton variant="ghost" size="sm" onClick={onCancel}>{t('loginCancel')}</PageButton> : null}</> : undefined}
     >
       <p title={hint.title}>{hint.text}</p>
     </Notice>
@@ -1888,7 +1984,40 @@ interface AccountActions {
   cancelLogin(): void
 }
 
-/** 新增面板只负责输入和操作意图；账号、登录、命名与补偿由宿主过程负责。 */
+/** How the add-account panel takes a key: the harness's browser sign-in, or a pasted key. */
+export type AddAccountMode = 'browser' | 'paste'
+
+/** Enrollment phases during which the panel only offers "cancel setup". */
+const ENROLLMENT_BUSY_PHASES: readonly string[] = ['creating', 'waiting', 'writing', 'cancelling']
+
+/**
+ * What the add-account panel's action row shows, from the enrollment phase
+ * and the panel's own inputs — a pure function so the button logic is tested
+ * without rendering:
+ * - `naming`: the host could not save the name; retry / accept / cancel.
+ * - `cancelSetup`: a sign-in or key write is in flight; only "cancel setup",
+ *   with the method switch and inputs locked.
+ * - `start`: idle; cancel plus the mode's primary action ("Start sign-in", or
+ *   "Add" once a key is typed in paste mode).
+ */
+export function addAccountPanelView({ phase, mode, keyReady, disabled }: {
+  phase: string | undefined
+  mode: AddAccountMode
+  keyReady: boolean
+  disabled: boolean
+}): { actions: 'naming' | 'cancelSetup' | 'start'; locked: boolean; canSubmit: boolean } {
+  if (phase === 'naming') return { actions: 'naming', locked: true, canSubmit: false }
+  if (phase !== undefined && ENROLLMENT_BUSY_PHASES.includes(phase)) return { actions: 'cancelSetup', locked: true, canSubmit: false }
+  return { actions: 'start', locked: disabled, canSubmit: !disabled && (mode === 'browser' || keyReady) }
+}
+
+/**
+ * 新增面板只负责输入和操作意图；账号、登录、命名与补偿由宿主过程负责。
+ * Drawn as the design canvas does: a "sign in / paste key" segmented switch,
+ * the optional name, the key field in paste mode, then cancel + the primary
+ * action on the right. Leaving paste mode clears the typed key, so a key never
+ * lingers in a field the user has moved away from.
+ */
 function AddAccountPanel({ state, disabled, t, enrollment, snapshot, onClose }: {
   state: SettingsPageState
   disabled: boolean
@@ -1898,21 +2027,73 @@ function AddAccountPanel({ state, disabled, t, enrollment, snapshot, onClose }: 
   onClose(): void
 }) {
   const [label, setLabel] = useState('')
-  const [pasting, setPasting] = useState(false)
+  const [mode, setMode] = useState<AddAccountMode>('browser')
+  const [key, setKey] = useState('')
+  const [keyVisible, setKeyVisible] = useState(false)
   const active = snapshot.active
-  const busy = active !== undefined && ['creating', 'waiting', 'writing', 'cancelling', 'naming'].includes(active.phase)
+  const view = addAccountPanelView({ phase: active?.phase, mode, keyReady: key.trim() !== '', disabled })
   const fallbackName = t('accountNameN', { n: state.accounts.length + 2 })
   useEffect(() => { if (active?.phase === 'finished') onClose() }, [active?.phase, onClose])
-  const start = (key?: string) => enrollment.begin({ mode: key === undefined ? 'browser' : 'manual',
-    label: label.trim() || fallbackName, automaticName: label.trim() === '', ...(key === undefined ? {} : { key }) })
+  const start = () => enrollment.begin({ mode: mode === 'browser' ? 'browser' : 'manual',
+    label: label.trim() || fallbackName, automaticName: label.trim() === '', ...(mode === 'browser' ? {} : { key }) })
   const close = () => { enrollment.cancel(); onClose() }
+  const pick = (next: AddAccountMode) => {
+    setMode(next)
+    if (next === 'browser') {
+      setKey('')
+      setKeyVisible(false)
+    }
+  }
   const waitingLink = active?.authUrl && active.phase === 'waiting' ? active.authUrl : undefined
   return (
-    <div className="cc-panel" role="group" aria-label={t('accountAdd')}>
+    <form
+      className="cc-panel"
+      aria-label={t('accountAdd')}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (view.canSubmit) void start()
+      }}
+    >
       <span className="cc-panelTitle">{t('accountAdd')}</span>
       <p className="cc-rowDesc">{t('accountAddHint')}</p>
-      <input className="cc-input" type="text" aria-label={t('accountNamePlaceholder')} placeholder={t('accountNamePlaceholder')}
-        value={label} disabled={disabled || busy} onChange={(event) => setLabel(event.target.value)} />
+      <div className="cc-seg" role="group" aria-label={t('accountAddMethod')}>
+        {(['browser', 'paste'] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            className={mode === option ? 'cc-segItem cc-segOn' : 'cc-segItem'}
+            aria-pressed={mode === option}
+            disabled={view.locked}
+            onClick={() => pick(option)}
+          >
+            {option === 'browser' ? t('accountAddLogin') : t('accountAddPaste')}
+          </button>
+        ))}
+      </div>
+      <input className="cc-fieldInput cc-panelInput" type="text" aria-label={t('accountNamePlaceholder')} placeholder={t('accountNamePlaceholder')}
+        value={label} disabled={view.locked} onChange={(event) => setLabel(event.target.value)} />
+      {mode === 'paste' ? (
+        <div className="cc-keyField">
+          <input
+            id="cc-add-account-key"
+            className="cc-fieldInput cc-panelInput"
+            type={keyVisible ? 'text' : 'password'}
+            aria-label={t('accountKeyPlaceholder')}
+            placeholder={t('accountKeyPlaceholder')}
+            autoComplete="new-password"
+            spellCheck={false}
+            autoFocus
+            value={key}
+            disabled={view.locked}
+            onChange={(event) => setKey(event.target.value)}
+          />
+          {key !== '' ? (
+            <PageButton variant="ghost" size="sm" disabled={view.locked} onClick={() => setKeyVisible((shown) => !shown)}>
+              {keyVisible ? t('hide') : t('show')}
+            </PageButton>
+          ) : null}
+        </div>
+      ) : null}
       {active ? (
         <Notice
           actions={waitingLink !== undefined ? (
@@ -1927,26 +2108,25 @@ function AddAccountPanel({ state, disabled, t, enrollment, snapshot, onClose }: 
         </Notice>
       ) : null}
       {snapshot.error ? <Notice tone="error"><p>{t(snapshot.error)}</p></Notice> : null}
-      {active?.phase === 'naming' ? (
-        <div className="cc-inlineActions">
-          <Button variant="primary" size="sm" disabled={disabled} onClick={() => void enrollment.name(active.suggestedName || label || fallbackName)}>{t('accountNameSaveRetry')}</Button>
-          <Button variant="ghost" size="sm" disabled={disabled} onClick={() => void enrollment.name()}>{t('accountNameAcceptExisting')}</Button>
-          <Button variant="ghost" size="sm" onClick={close}>{t('cancel')}</Button>
-        </div>
-      ) : pasting ? (
-        <InlineInput id="cc-add-account-key" label={t('accountKeyPlaceholder')} secret placeholder={t('accountKeyPlaceholder')}
-          confirmLabel={t('accountAddConfirm')} disabled={disabled || busy} t={t}
-          onCancel={close} onSubmit={(key) => { void start(key) }} />
-      ) : (
-        <div className="cc-inlineActions">
-          <Button variant="primary" size="sm" disabled={disabled || busy} onClick={() => void start()}>{t('accountAddLogin')}</Button>
-          <Button variant="ghost" size="sm" disabled={disabled || busy} onClick={() => setPasting(true)}>{t('accountAddPaste')}</Button>
-          <span className="cc-spacer" />
-          <Button variant="ghost" size="sm" onClick={close}>{t('cancel')}</Button>
-        </div>
-      )}
-      {busy && active?.phase !== 'naming' && pasting ? <Button variant="ghost" size="sm" onClick={close}>{t('accountAddCancel')}</Button> : null}
-    </div>
+      <div className="cc-panelActions">
+        {view.actions === 'naming' && active !== undefined ? (
+          <>
+            <PageButton variant="ghost" onClick={close}>{t('cancel')}</PageButton>
+            <PageButton variant="outline" disabled={disabled} onClick={() => void enrollment.name()}>{t('accountNameAcceptExisting')}</PageButton>
+            <PageButton variant="primary" disabled={disabled} onClick={() => void enrollment.name(active.suggestedName || label || fallbackName)}>{t('accountNameSaveRetry')}</PageButton>
+          </>
+        ) : view.actions === 'cancelSetup' ? (
+          <PageButton variant="ghost" onClick={close}>{t('accountAddCancel')}</PageButton>
+        ) : (
+          <>
+            <PageButton variant="ghost" onClick={close}>{t('cancel')}</PageButton>
+            <PageButton variant="primary" type="submit" disabled={!view.canSubmit}>
+              {mode === 'browser' ? t('accountAddStart') : t('accountAddConfirm')}
+            </PageButton>
+          </>
+        )}
+      </div>
+    </form>
   )
 }
 
@@ -2000,19 +2180,20 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
         </>
       }
       action={
-        <Button variant="ghost" size="sm" icon={<Icon name="refresh" />} disabled={loading} onClick={() => { onRefresh(); void enrollment.refresh() }}>
+        <PageButton variant="ghost" size="sm" icon={<Icon name="refresh" className="cc-icon cc-btnIcon" />} disabled={loading} onClick={() => { onRefresh(); void enrollment.refresh() }}>
           {loading ? t('usageRefreshing') : t('usageRefresh')}
-        </Button>
+        </PageButton>
       }
     >
       <p className="cc-groupDesc">{multi ? t('accountsRotationHint') : t('accountsHint')}</p>
       {multi ? (
         <div className="cc-accountMode">
+          <Icon name="swap" className="cc-icon cc-btnIcon" />
           <span>{pinnedRow !== undefined ? t('accountModePinned', { name: pinnedRow.label }) : t('accountModeAuto')}</span>
           {pinnedRow !== undefined ? (
-            <Button variant="ghost" size="sm" disabled={disabled || state.accountBusy} onClick={() => void actions.setActive('')}>
+            <PageButton variant="ghost" size="sm" disabled={disabled || state.accountBusy} onClick={() => void actions.setActive('')}>
               {t('accountActionUnpin')}
-            </Button>
+            </PageButton>
           ) : null}
         </div>
       ) : null}
@@ -2034,7 +2215,7 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
         }
         if (state.credentialRefreshFailed || state.accountResult?.refreshFailed || state.saveResult?.refreshFailed) {
           notices.push(
-            <Notice key="refresh" tone="warn" actions={<Button variant="outline" size="sm" onClick={actions.refreshCredentials}>{t('writeRefreshRetry')}</Button>}>
+            <Notice key="refresh" tone="warn" actions={<PageButton variant="outline" size="sm" onClick={actions.refreshCredentials}>{t('writeRefreshRetry')}</PageButton>}>
               <p>{t('writeRefreshFailed')}</p>
             </Notice>,
           )
@@ -2048,10 +2229,10 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
               key="cleanup"
               tone="warn"
               actions={
-                <Button variant="outline" size="sm" disabled={disabled || state.accountBusy}
+                <PageButton variant="outline" size="sm" disabled={disabled || state.accountBusy}
                   onClick={() => { for (const ref of state.pendingCredentialCleanup) void actions.cleanup(ref) }}>
                   {t('accountCleanupRetry')}
-                </Button>
+                </PageButton>
               }
             >
               <p>{t('accountCleanupPending')}</p>
@@ -2066,11 +2247,11 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
               actions={
                 <>
                   {record.phase === 'naming' && record.suggestedName ? (
-                    <Button variant="outline" size="sm" disabled={disabled} onClick={() => void enrollment.recover(record, record.suggestedName)}>{t('accountNameSaveRetry')}</Button>
+                    <PageButton variant="outline" size="sm" disabled={disabled} onClick={() => void enrollment.recover(record, record.suggestedName)}>{t('accountNameSaveRetry')}</PageButton>
                   ) : null}
-                  <Button variant="outline" size="sm" disabled={disabled} onClick={() => void enrollment.recover(record)}>
+                  <PageButton variant="outline" size="sm" disabled={disabled} onClick={() => void enrollment.recover(record)}>
                     {record.phase === 'naming' ? t('accountNameAcceptExisting') : t('accountEnrollmentCleanupRetry')}
-                  </Button>
+                  </PageButton>
                 </>
               }
             >
@@ -2083,7 +2264,7 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
             <Notice
               key="active-cleanup"
               tone="warn"
-              actions={<Button variant="outline" size="sm" disabled={disabled} onClick={() => void enrollment.recover(snapshot.active!)}>{t('accountEnrollmentCleanupRetry')}</Button>}
+              actions={<PageButton variant="outline" size="sm" disabled={disabled} onClick={() => void enrollment.recover(snapshot.active!)}>{t('accountEnrollmentCleanupRetry')}</PageButton>}
             >
               <p>{t(snapshot.active.messageKey)}</p>
             </Notice>,
@@ -2125,16 +2306,16 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
       {!adding || openAnalytics ? (
         <div className="cc-accountActions">
           {!adding ? (
-            <Button variant="outline" size="md" icon={<Icon name="plus" />} disabled={disabled} onClick={() => { enrollment.reset(); setAdding(true) }}>
+            <PageButton variant="outline" size="md" icon={<Icon name="plus" className="cc-icon cc-btnIcon" />} disabled={disabled} onClick={() => { enrollment.reset(); setAdding(true) }}>
               {t('accountAdd')}
-            </Button>
+            </PageButton>
           ) : null}
           <span className="cc-spacer" />
           {openAnalytics ? (
-            <Button variant="ghost" size="md" icon={<Icon name="chart" />} className="cc-analyticsEntry" onClick={openAnalytics}>
+            <PageButton variant="ghost" size="md" icon={<Icon name="chart" className="cc-icon cc-btnIcon" />} className="cc-analyticsEntry" onClick={openAnalytics}>
               <span className="cc-analyticsEntryText">{t('openAnalytics')}</span>
-              <Icon name="arrowRight" />
-            </Button>
+              <Icon name="arrowRight" className="cc-icon cc-btnIcon" />
+            </PageButton>
           ) : null}
         </div>
       ) : null}
@@ -2192,13 +2373,18 @@ function usePluginUpdate(): string | undefined {
 /**
  * The service status: paint the cached snapshot immediately, then run one
  * throttled check per page open (the TTL and every failure path live in
- * ./service-status.ts, which never rejects). The probe is public data, so it
- * needs neither the Host nor a key.
+ * ./service-status.ts, which never rejects). The Host probe runs alongside it
+ * and is the row's real-time half — the published record only moves on a status
+ * change or the daily summary, so it can legitimately be hours old.
  */
-function useServiceStatus(): ServiceStatusSnapshot | undefined {
+function useServiceStatus(probeService: CommandCodeSettingsProps['probeService']): {
+  snapshot: ServiceStatusSnapshot | undefined
+  probe: ServiceProbe
+} {
   const [snapshot, setSnapshot] = useState<ServiceStatusSnapshot | undefined>(
     () => readCachedServiceStatus(localStorageServiceStatusStore()),
   )
+  const [probe, setProbe] = useState<ServiceProbe>({ kind: 'checking' })
   useEffect(() => {
     let cancelled = false
     void checkServiceStatus({ store: localStorageServiceStatusStore() }).then((next) => {
@@ -2206,11 +2392,19 @@ function useServiceStatus(): ServiceStatusSnapshot | undefined {
       // A rejection here would be a bug — checkServiceStatus catches every
       // source failure — but the settings page must never break on a probe.
     }, () => {})
+    void probeService().then((result) => {
+      if (cancelled) return
+      // A Host older than the probe endpoint answers the failure branch; the
+      // row renders that as "unknown" instead of borrowing the published state.
+      setProbe(result.ok ? { kind: 'result', result: result.value } : { kind: 'unavailable' })
+    }, () => {
+      if (!cancelled) setProbe({ kind: 'unavailable' })
+    })
     return () => {
       cancelled = true
     }
   }, [])
-  return snapshot
+  return { snapshot, probe }
 }
 
 /**
@@ -2304,26 +2498,26 @@ function SaveBar({ view, state, t, onDiscard, onSave, onLocate }: {
                 Save stays disabled while a draft is invalid; Locate is how the
                 bar points at it, since that draft may sit in a folded group. */}
             {state.invalid ? (
-              <Button variant="ghost" size="md" disabled={!view.visible} onClick={onLocate}>
+              <PageButton variant="ghost" size="lg" disabled={!view.visible} onClick={onLocate}>
                 {t('saveLocate')}
-              </Button>
+              </PageButton>
             ) : null}
-            <Button
+            <PageButton
               variant="ghost"
-              size="md"
+              size="lg"
               disabled={!view.visible || (!state.dirty && !state.failed) || state.saving}
               onClick={onDiscard}
             >
               {t('discard')}
-            </Button>
-            <Button
+            </PageButton>
+            <PageButton
               variant="primary"
-              size="md"
+              size="lg"
               disabled={!view.visible || !state.dirty || state.invalid || state.saving}
               onClick={onSave}
             >
               {t(state.saving ? 'saving' : 'save')}
-            </Button>
+            </PageButton>
           </div>
         ) : null}
       </div>
@@ -2359,10 +2553,9 @@ export function CommandCodeSettingsPage(props: CommandCodeSettingsProps) {
   }), [renameAccount, removeAccount, retryCredentialCleanup, setAccountKey, clearAccountKey, setActiveAccount, setAccountModels, beginLogin, cancelLogin, refreshCredentials])
   const bar = saveBarView(state, savedVisible, t)
   const form = { state, disabled, t, onEdit: props.edit, onReset: props.resetField }
-  const status = useServiceStatus()
+  const status = useServiceStatus(props.probeService)
   const [fold, setFold] = useGroupFold()
   const foldProps = (group: FoldGroup) => ({ expanded: fold[group], onToggle: () => setFold({ ...fold, [group]: !fold[group] }) })
-  const everyOpen = allExpanded(fold)
   // Locate: open every group holding an invalid draft, then — once the
   // re-render has unhidden it — focus the first invalid control in page order.
   const sectionRef = useRef<HTMLElement>(null)
@@ -2380,13 +2573,7 @@ export function CommandCodeSettingsPage(props: CommandCodeSettingsProps) {
   }
   return (
     <section ref={sectionRef} className={bar.visible ? 'cc-section cc-sectionWithBar' : 'cc-section'} aria-label={t('title')}>
-      <div className="cc-pageHead">
-        <h2 className="cc-title">{t('title')}</h2>
-        <span className="cc-spacer" />
-        <Button variant="ghost" size="sm" onClick={() => setFold(setAllGroups(!everyOpen))}>
-          {everyOpen ? t('collapseAll') : t('expandAll')}
-        </Button>
-      </div>
+      <h2 className="cc-title">{t('title')}</h2>
       <p className="cc-intro">{t('intro')}</p>
       {!state.writable ? <Notice icon="lock"><p>{t('readOnly')}</p></Notice> : null}
       <AccountsCard
@@ -2409,7 +2596,7 @@ export function CommandCodeSettingsPage(props: CommandCodeSettingsProps) {
         onOverrides={props.editContextWindowOverrides}
       />
       <PrivacyCard {...form} {...foldProps('privacy')} />
-      <IntegrationsCard {...form} {...foldProps('integrations')} status={status} />
+      <IntegrationsCard {...form} {...foldProps('integrations')} status={status.snapshot} probe={status.probe} />
       <AdvancedSection {...form} {...foldProps('advanced')} />
       <p className="cc-version">
         Command Code Provider v{PLUGIN_VERSION}

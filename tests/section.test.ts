@@ -30,6 +30,7 @@ import { DEFAULT_TRANSPORT_MAX_RETRIES } from '../src/transport-retry.ts'
 
 const {
   accountIssues,
+  addAccountPanelView,
   advancedGroupInvalid,
   advancedOverriddenCount,
   FIELD_DEFAULTS,
@@ -173,4 +174,50 @@ test('FIELD_DEFAULTS: the empty-field placeholders mirror the Host defaults', ()
   assert.equal(FIELD_DEFAULTS.requestTimeoutSeconds, String(DEFAULT_REQUEST_TIMEOUT_MS / 1000))
   assert.equal(FIELD_DEFAULTS.streamIdleTimeoutSeconds, String(DEFAULT_STREAM_IDLE_TIMEOUT_MS / 1000))
   assert.equal(FIELD_DEFAULTS.transportMaxRetries, String(DEFAULT_TRANSPORT_MAX_RETRIES))
+})
+
+// ---- Add-account panel action row ----
+
+test('addAccountPanelView: idle sign-in offers cancel + start, ready at once', () => {
+  assert.deepEqual(
+    addAccountPanelView({ phase: undefined, mode: 'browser', keyReady: false, disabled: false }),
+    { actions: 'start', locked: false, canSubmit: true },
+  )
+})
+
+test('addAccountPanelView: idle paste mode needs a key before Add', () => {
+  assert.equal(addAccountPanelView({ phase: undefined, mode: 'paste', keyReady: false, disabled: false }).canSubmit, false)
+  assert.equal(addAccountPanelView({ phase: undefined, mode: 'paste', keyReady: true, disabled: false }).canSubmit, true)
+})
+
+test('addAccountPanelView: a read-only page locks the panel and never submits', () => {
+  assert.deepEqual(
+    addAccountPanelView({ phase: undefined, mode: 'browser', keyReady: false, disabled: true }),
+    { actions: 'start', locked: true, canSubmit: false },
+  )
+})
+
+test('addAccountPanelView: an enrollment in flight only offers cancel setup', () => {
+  for (const phase of ['creating', 'waiting', 'writing', 'cancelling']) {
+    assert.deepEqual(
+      addAccountPanelView({ phase, mode: 'paste', keyReady: true, disabled: false }),
+      { actions: 'cancelSetup', locked: true, canSubmit: false },
+      phase,
+    )
+  }
+})
+
+test('addAccountPanelView: a failed name save switches to the naming actions', () => {
+  assert.deepEqual(
+    addAccountPanelView({ phase: 'naming', mode: 'browser', keyReady: false, disabled: false }),
+    { actions: 'naming', locked: true, canSubmit: false },
+  )
+})
+
+test('addAccountPanelView: a settled enrollment returns the panel to idle', () => {
+  // finished closes the panel; failed / cancelled / cleanup-needed leave it
+  // open for another attempt, with the error or recovery shown elsewhere.
+  for (const phase of ['finished', 'failed', 'cancelled', 'cleanup-needed']) {
+    assert.equal(addAccountPanelView({ phase, mode: 'browser', keyReady: false, disabled: false }).actions, 'start', phase)
+  }
 })

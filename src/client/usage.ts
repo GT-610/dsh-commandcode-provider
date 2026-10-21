@@ -16,6 +16,7 @@ import type { CommandCodeLoginStatus } from '../login-wire.ts'
 import type { EnrollmentRemote } from './enrollment.ts'
 import type { AnalyticsRemote } from './analytics.ts'
 import type { AnalyticsQuery, AnalyticsReport } from '../analytics-wire.ts'
+import type { CommandCodeProbeResult } from '../service-probe-wire.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { readableErrorText } from '../readable-error.ts'
 export { compactCountTitle, formatCompactCount, formatMoney, formatMoneyExact, formatTokensCompact, formatSuccessRate, windowRatio, formatResetAt } from '../display-format.ts'
@@ -33,6 +34,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'commandcode/models': () => Promise<RemoteResult<CommandCodeCatalog>>
     'commandcode/prices': () => Promise<RemoteResult<CommandCodePriceTable>>
     'commandcode/analytics': (query: AnalyticsQuery) => Promise<RemoteResult<AnalyticsReport>>
+    'commandcode/probe': () => Promise<RemoteResult<CommandCodeProbeResult>>
   }
   interface TypertRemoteNamespaceMap {
     commandcode: Partial<EnrollmentRemote> & AnalyticsRemote & {
@@ -46,6 +48,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
        * (see `./prices.ts`) instead of throwing.
        */
       prices?: () => Promise<RemoteResult<CommandCodePriceTable>>
+      /**
+       * Optional for the same cross-version reason: a Host older than the
+       * connectivity probe mounts no `commandcode/probe` descriptor, so the
+       * status row reads a missing member as "probe unavailable" instead of
+       * throwing. See `./service-status.ts`.
+       */
+      probe?: () => Promise<RemoteResult<CommandCodeProbeResult>>
       loginBegin: () => Promise<RemoteResult<CommandCodeLoginStatus>>
       loginStatus: () => Promise<RemoteResult<CommandCodeLoginStatus>>
       loginCancel: () => Promise<RemoteResult<CommandCodeLoginStatus>>

@@ -49,6 +49,7 @@ import { CommandCodeAccountPool, accountUsable, captureAccountSelection, type Co
 import type { CommandCodeAccountConfig, CommandCodeAccountSlot, CommandCodeModelAccountRule } from './accounts.ts'
 import { applyCommands } from './commands.ts'
 import { applyUsageRemote } from './usage-remote.ts'
+import { probeCommandCode } from './service-probe.ts'
 import type { CommandCodeAccountsReport, CommandCodeCatalog } from './usage-wire.ts'
 import { CommandCodeLoginFlow, loginCredentialRef } from './login.ts'
 import type { CommandCodeLoginCredentials } from './login.ts'
@@ -855,7 +856,7 @@ export function apply(ctx: Context, config: Config): void {
     login: (storeKey) => new CommandCodeLoginFlow({ apiBase: () => options().apiBase, storeKey }),
   })
   ctx.effect(() => () => enrollment.dispose(), 'dsh-commandcode-provider: account enrollment')
-  applyUsageRemote(ctx, { adapter, reports: usageReports, login: loginFlow, enrollment, listModels: catalogForEditors, analytics: createAnalyticsReader(ctx, adapter) })
+  applyUsageRemote(ctx, { adapter, reports: usageReports, login: loginFlow, enrollment, listModels: catalogForEditors, analytics: createAnalyticsReader(ctx, adapter), probe: () => probeCommandCode({ apiBase: options().apiBase }) })
 
   // Web search over the Command Code Provider API, exposed through the web
   // capability seam (`ctx.web`). Rides the optional `web` service: a child

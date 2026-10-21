@@ -18,15 +18,17 @@ import assert from 'node:assert/strict'
 import { zh, type SettingsCommandCodeKey } from '../src/client/locales.ts'
 import {
   SERVICE_STATUS_CACHE_KEY,
+  SERVICE_STATUS_LAG_WARN_MS,
   SERVICE_STATUS_TTL_MS,
   STATUS_PAGE_URL,
+  compactUptime,
   checkServiceStatus,
   localStorageServiceStatusStore,
   parseStateFile,
   parseSummary,
   serviceStatusView,
 } from '../src/client/service-status.ts'
-import type { ServiceStatusSnapshot, ServiceStatusStore } from '../src/client/service-status.ts'
+import type { ServiceProbe, ServiceStatusSnapshot, ServiceStatusStore } from '../src/client/service-status.ts'
 
 /** The real Chinese dictionary, with `{name}` params substituted. */
 const t = (key: SettingsCommandCodeKey, params: Record<string, unknown> = {}): string =>
@@ -258,47 +260,87 @@ test('a missing state file still yields a live snapshot, without a check time', 
   assert.equal(snapshot.responseTimeWeekMs, 114)
 })
 
+/** The live probe, already landed: a 200 in 129 ms. */
+const PROBE_OK: ServiceProbe = {
+  kind: 'result',
+  result: { outcome: 'ok', status: 200, latencyMs: 129, checkedAt: NOW },
+}
+
 test('serviceStatusView renders the checking state before the first check lands', () => {
-  const view = serviceStatusView(undefined, t, NOW)
+  const view = serviceStatusView(undefined, { kind: 'checking' }, t, NOW)
   assert.equal(view.checking, true)
   assert.equal(view.label, zh.serviceStatusChecking)
-  assert.equal(view.detail, zh.serviceStatusHint)
+  assert.equal(view.officialTone, 'checking')
+  assert.deepEqual(view.badge, { label: zh.serviceStatusChecking, tone: 'checking' })
+  assert.equal(view.detail, undefined)
+  assert.equal(view.local, zh.serviceStatusLocalChecking)
+  assert.equal(view.localTone, 'muted')
+  assert.equal(view.localChecking, true)
   assert.equal(view.linkLabel, zh.serviceStatusOpen)
 })
 
-test('serviceStatusView names the verdict, the aggregates and the check age', () => {
-  const view = serviceStatusView(upSnapshot(), t, NOW)
+test('serviceStatusView names the verdict, the aggregates and the published age', () => {
+  const view = serviceStatusView(upSnapshot(), PROBE_OK, t, NOW)
   assert.equal(view.checking, false)
   assert.equal(view.label, zh.serviceStatusUp)
-  assert.equal(
-    view.detail,
-    [t('serviceStatusUptimeWeek', { value: '100.00%' }), t('serviceStatusUptimeMonth', { value: '99.98%' }), t('serviceStatusResponseWeek', { value: '114 ms' })].join(' · '),
-  )
-  assert.equal(view.meta, t('serviceStatusCheckedMinutes', { count: 5 }))
+  assert.equal(view.officialTone, 'ok')
+  assert.deepEqual(view.badge, { label: zh.serviceStatusUp, tone: 'ok' })
+  // Padding zeros dropped (100.00% → 100%), both windows under one "uptime".
+  assert.equal(view.detail, '可用率 7 天 100% / 30 天 99.98% · 平均响应 114 ms')
+  assert.equal(view.updated, t('serviceStatusUpdatedMinutes', { count: 5 }))
+  assert.equal(view.lag, undefined)
   assert.equal(view.notice, undefined)
+  assert.equal(view.local, t('serviceStatusLocalOk', { latency: 129 }))
+  assert.equal(view.localTone, 'ok')
 })
 
 test('serviceStatusView marks a stale snapshot with the last-known notice', () => {
-  const stale = serviceStatusView(upSnapshot({ live: false, stale: true }), t, NOW)
+  const stale = serviceStatusView(upSnapshot({ live: false, stale: true }), PROBE_OK, t, NOW)
   assert.equal(stale.label, zh.serviceStatusUp)
   assert.equal(stale.notice, zh.serviceStatusStale)
 
-  const unavailable = serviceStatusView({ level: 'unknown', live: false, stale: false, fetchedAt: NOW }, t, NOW)
+  const unavailable = serviceStatusView({ level: 'unknown', live: false, stale: false, fetchedAt: NOW }, PROBE_OK, t, NOW)
   assert.equal(unavailable.label, zh.serviceStatusUnknown)
   assert.equal(unavailable.notice, zh.serviceStatusUnavailable)
 })
 
-test('serviceStatusView buckets the check age and tolerates a missing timestamp', () => {
-  assert.equal(serviceStatusView(upSnapshot({ checkedAt: NOW - 30_000 }), t, NOW).meta, zh.serviceStatusCheckedJustNow)
+test('serviceStatusView buckets the published age and tolerates a missing timestamp', () => {
+  assert.equal(serviceStatusView(upSnapshot({ checkedAt: NOW - 30_000 }), PROBE_OK, t, NOW).updated, zh.serviceStatusUpdatedJustNow)
   assert.equal(
-    serviceStatusView(upSnapshot({ checkedAt: NOW - 3 * 60 * 60_000 }), t, NOW).meta,
-    t('serviceStatusCheckedHours', { count: 3 }),
+    serviceStatusView(upSnapshot({ checkedAt: NOW - 3 * 60 * 60_000 }), PROBE_OK, t, NOW).updated,
+    t('serviceStatusUpdatedHours', { count: 3 }),
   )
   assert.equal(
-    serviceStatusView(upSnapshot({ checkedAt: NOW - 2 * 24 * 60 * 60_000 }), t, NOW).meta,
-    t('serviceStatusCheckedDays', { count: 2 }),
+    serviceStatusView(upSnapshot({ checkedAt: NOW - 2 * 24 * 60 * 60_000 }), PROBE_OK, t, NOW).updated,
+    t('serviceStatusUpdatedDays', { count: 2 }),
   )
-  assert.equal(serviceStatusView(upSnapshot({ checkedAt: undefined }), t, NOW).meta, zh.serviceStatusCheckedUnknown)
+  assert.equal(serviceStatusView(upSnapshot({ checkedAt: undefined }), PROBE_OK, t, NOW).updated, zh.serviceStatusUpdatedUnknown)
+})
+
+test('serviceStatusView explains the publication lag only once the record is old', () => {
+  assert.equal(serviceStatusView(upSnapshot({ checkedAt: NOW - 5 * 60_000 }), PROBE_OK, t, NOW).lag, undefined)
+  assert.equal(serviceStatusView(upSnapshot({ checkedAt: NOW - SERVICE_STATUS_LAG_WARN_MS }), PROBE_OK, t, NOW).lag, zh.serviceStatusLag)
+})
+
+test('serviceStatusView renders every local probe outcome', () => {
+  const at = (probe: ServiceProbe) => serviceStatusView(upSnapshot(), probe, t, NOW)
+
+  const httpError = at({ kind: 'result', result: { outcome: 'http-error', status: 503, latencyMs: 12, checkedAt: NOW } })
+  assert.equal(httpError.local, t('serviceStatusLocalHttp', { status: 503 }))
+  assert.equal(httpError.localTone, 'error')
+
+  const timeout = at({ kind: 'result', result: { outcome: 'timeout', status: 0, latencyMs: 0, checkedAt: NOW } })
+  assert.equal(timeout.local, zh.serviceStatusLocalTimeout)
+  assert.equal(timeout.localTone, 'error')
+
+  const unreachable = at({ kind: 'result', result: { outcome: 'unreachable', status: 0, latencyMs: 0, checkedAt: NOW } })
+  assert.equal(unreachable.local, zh.serviceStatusLocalUnreachable)
+  assert.equal(unreachable.localTone, 'error')
+
+  const unavailable = at({ kind: 'unavailable' })
+  assert.equal(unavailable.local, zh.serviceStatusLocalUnavailable)
+  assert.equal(unavailable.localTone, 'muted')
+  assert.equal(unavailable.localChecking, false)
 })
 
 test('localStorageServiceStatusStore round-trips and tolerates damaged storage', () => {
@@ -321,4 +363,39 @@ test('localStorageServiceStatusStore round-trips and tolerates damaged storage',
 
 test('the status page link is the public page', () => {
   assert.equal(STATUS_PAGE_URL, 'https://status.commandcode.ai/')
+})
+
+test('compactUptime drops padding zeros and leaves anything else as published', () => {
+  assert.equal(compactUptime('100.00%'), '100%')
+  assert.equal(compactUptime('99.90%'), '99.9%')
+  assert.equal(compactUptime('99.95%'), '99.95%')
+  assert.equal(compactUptime('100%'), '100%')
+  assert.equal(compactUptime('n/a'), 'n/a')
+})
+
+test('serviceStatusView: a failed local probe outranks the published verdict on the heading', () => {
+  const at = (probe: ServiceProbe) => serviceStatusView(upSnapshot(), probe, t, NOW)
+  // The published record still reads "operational" on its own line …
+  const unreachable = at({ kind: 'result', result: { outcome: 'unreachable', status: 0, latencyMs: 0, checkedAt: NOW } })
+  assert.equal(unreachable.label, zh.serviceStatusUp)
+  assert.equal(unreachable.officialTone, 'ok')
+  // … but the heading reports that this machine cannot get through.
+  assert.deepEqual(unreachable.badge, { label: zh.serviceStatusBadgeLocalUnreachable, tone: 'warn' })
+  assert.deepEqual(
+    at({ kind: 'result', result: { outcome: 'timeout', status: 0, latencyMs: 0, checkedAt: NOW } }).badge,
+    { label: zh.serviceStatusBadgeLocalTimeout, tone: 'warn' },
+  )
+  assert.deepEqual(
+    at({ kind: 'result', result: { outcome: 'http-error', status: 503, latencyMs: 12, checkedAt: NOW } }).badge,
+    { label: zh.serviceStatusBadgeLocalHttp, tone: 'warn' },
+  )
+  // A probe still running, or a Host without one, leaves the published verdict.
+  assert.deepEqual(at({ kind: 'checking' }).badge, { label: zh.serviceStatusUp, tone: 'ok' })
+  assert.deepEqual(at({ kind: 'unavailable' }).badge, { label: zh.serviceStatusUp, tone: 'ok' })
+})
+
+test('serviceStatusView maps every published level to its dot tone', () => {
+  assert.equal(serviceStatusView(upSnapshot({ level: 'degraded' }), PROBE_OK, t, NOW).officialTone, 'warn')
+  assert.equal(serviceStatusView(upSnapshot({ level: 'down' }), PROBE_OK, t, NOW).officialTone, 'error')
+  assert.equal(serviceStatusView(upSnapshot({ level: 'unknown' }), PROBE_OK, t, NOW).officialTone, 'idle')
 })

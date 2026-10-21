@@ -1885,6 +1885,20 @@ interface AnalyticsReport {
   monthlyEstimate: number | null;
 }
 //#endregion
+//#region src/service-probe-wire.d.ts
+/** How the probe ended; the browser maps each value to localized copy. */
+type ProbeOutcome = 'ok' | 'http-error' | 'timeout' | 'unreachable';
+/** The probe facts the Host returns; the browser owns every string. */
+interface CommandCodeProbeResult {
+  outcome: ProbeOutcome;
+  /** HTTP status when a response arrived; 0 when it did not. */
+  status: number;
+  /** Round-trip time in milliseconds; 0 when no response arrived. */
+  latencyMs: number;
+  /** When the Host finished the probe (epoch ms, Host clock). */
+  checkedAt: number;
+}
+//#endregion
 //#region src/usage-remote.d.ts
 /**
  * The browser-login face the usage service exposes (`commandcode/login*`).
@@ -1928,6 +1942,13 @@ interface CommandCodeUsageDeps<C extends CommandCodeConnectionOptions = CommandC
   login?: LoginFlowFacade;
   enrollment?: AccountEnrollmentManager;
   analytics?: (query: AnalyticsQuery, signal?: AbortSignal) => Promise<AnalyticsReport>;
+  /**
+   * Host-side connectivity probe for the settings page's service-status row
+   * (wired by the plugin entry against the live API base). Absent, the
+   * `commandcode/probe` endpoint rejects and the row shows the local
+   * connectivity as unknown instead of inventing a result.
+   */
+  probe?: () => Promise<CommandCodeProbeResult>;
 }
 /**
  * The Remote receiver: a Cordis service the Gateway resolves by key
@@ -1960,6 +1981,14 @@ declare class CommandCodeUsageService<C extends CommandCodeConnectionOptions = C
    * open page without a rebuild.
    */
   prices(): Promise<CommandCodePriceTable>;
+  /**
+   * One live connectivity probe of the configured API base, run on this Host.
+   * The status page's own data lags by design (Upptime publishes on change or
+   * once a day), so this is the only real-time half of the status row. The
+   * plugin entry wires the probe; a programmatic setup without it gets an
+   * explicit failure, which the row renders as unknown.
+   */
+  probe(): Promise<CommandCodeProbeResult>;
   analytics(query: AnalyticsQuery): Promise<AnalyticsReport>;
   /**
    * Start (or rejoin) a browser-login attempt and return its fresh status —

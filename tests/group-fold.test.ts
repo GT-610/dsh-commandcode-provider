@@ -13,11 +13,9 @@ import assert from 'node:assert/strict'
 import {
   DEFAULT_FOLD_STATE,
   FOLD_STATE_KEY,
-  allExpanded,
   expandGroups,
   localStorageFoldStore,
   parseFoldState,
-  setAllGroups,
 } from '../src/client/group-fold.ts'
 
 /** A Map-backed stand-in for `Storage`; `failing` makes every call throw. */
@@ -55,12 +53,6 @@ test('a partial record keeps the groups it knows and defaults the rest', () => {
   assert.equal('removed' in state, false, 'unknown groups are dropped')
 })
 
-test('expand-all / collapse-all and the header label switch', () => {
-  assert.equal(allExpanded(DEFAULT_FOLD_STATE), false)
-  assert.equal(allExpanded(setAllGroups(true)), true)
-  assert.equal(Object.values(setAllGroups(false)).some(Boolean), false)
-})
-
 test('expandGroups opens only the named groups and keeps the rest', () => {
   const next = expandGroups(DEFAULT_FOLD_STATE, ['advanced'])
   assert.equal(next.advanced, true)
@@ -82,5 +74,5 @@ test('a missing or throwing storage reads as the defaults and drops writes', () 
   assert.deepEqual(localStorageFoldStore(undefined).read(), DEFAULT_FOLD_STATE)
   const broken = localStorageFoldStore(memoryStorage({}, true))
   assert.deepEqual(broken.read(), DEFAULT_FOLD_STATE)
-  assert.doesNotThrow(() => broken.write(setAllGroups(true)))
+  assert.doesNotThrow(() => broken.write({ ...DEFAULT_FOLD_STATE, models: true }))
 })

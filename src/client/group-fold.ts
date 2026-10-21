@@ -58,16 +58,6 @@ export function parseFoldState(raw: string | null | undefined): FoldState {
   return next
 }
 
-/** Whether every group is open — the header button then offers "collapse all". */
-export function allExpanded(state: FoldState): boolean {
-  return FOLD_GROUPS.every((group) => state[group])
-}
-
-/** Every group set to one value (the header's expand-all / collapse-all). */
-export function setAllGroups(expanded: boolean): FoldState {
-  return Object.fromEntries(FOLD_GROUPS.map((group) => [group, expanded])) as Record<FoldGroup, boolean>
-}
-
 /** Open the given groups, leaving the rest as they are (the save bar's locate action). */
 export function expandGroups(state: FoldState, groups: readonly FoldGroup[]): FoldState {
   if (groups.every((group) => state[group])) return state

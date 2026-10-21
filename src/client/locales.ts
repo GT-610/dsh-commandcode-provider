@@ -42,8 +42,6 @@ export type SettingsCommandCodeKey =
   | 'groupOverriddenOne'
   | 'groupOverriddenMany'
   | 'groupInvalid'
-  | 'expandAll'
-  | 'collapseAll'
   | 'saveLocate'
   | 'accountsSummaryOne'
   | 'accountsSummaryMany'
@@ -145,12 +143,12 @@ export type SettingsCommandCodeKey =
   | 'usageTokens'
   | 'usageTokensIn'
   | 'usageTokensOut'
-  | 'usageMonthly'
   | 'usagePurchased'
   | 'usageFree'
   | 'usageFiveHour'
   | 'usageWeekly'
   | 'usageMonthlyLeft'
+  | 'usageMonthlyDepleted'
   | 'usageExceeded'
   | 'usageReset'
   | 'usagePartial'
@@ -213,6 +211,8 @@ export type SettingsCommandCodeKey =
   | 'accountAddPaste'
   | 'accountAddConfirm'
   | 'accountAddCancel'
+  | 'accountAddStart'
+  | 'accountAddMethod'
   | 'accountAddLinkHint'
   | 'accountAddOpenLink'
   | 'accountNamePlaceholder'
@@ -244,14 +244,27 @@ export type SettingsCommandCodeKey =
   | 'serviceStatusDegraded'
   | 'serviceStatusDown'
   | 'serviceStatusUnknown'
+  | 'serviceStatusOfficial'
+  | 'serviceStatusLocal'
+  | 'serviceStatusUptime'
+  | 'serviceStatusBadgeLocalHttp'
+  | 'serviceStatusBadgeLocalTimeout'
+  | 'serviceStatusBadgeLocalUnreachable'
   | 'serviceStatusUptimeWeek'
   | 'serviceStatusUptimeMonth'
   | 'serviceStatusResponseWeek'
-  | 'serviceStatusCheckedJustNow'
-  | 'serviceStatusCheckedMinutes'
-  | 'serviceStatusCheckedHours'
-  | 'serviceStatusCheckedDays'
-  | 'serviceStatusCheckedUnknown'
+  | 'serviceStatusUpdatedJustNow'
+  | 'serviceStatusUpdatedMinutes'
+  | 'serviceStatusUpdatedHours'
+  | 'serviceStatusUpdatedDays'
+  | 'serviceStatusUpdatedUnknown'
+  | 'serviceStatusLag'
+  | 'serviceStatusLocalChecking'
+  | 'serviceStatusLocalOk'
+  | 'serviceStatusLocalHttp'
+  | 'serviceStatusLocalTimeout'
+  | 'serviceStatusLocalUnreachable'
+  | 'serviceStatusLocalUnavailable'
   | 'serviceStatusStale'
   | 'serviceStatusUnavailable'
   | 'serviceStatusOpen'
@@ -283,8 +296,6 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   groupOverriddenMany: '已自定义 {count} 项',
   // 分组头的摘要徽标：收起时不展开也能看出该组现状（决策记录第十章第4条）。
   groupInvalid: '有未填好的数字',
-  expandAll: '全部展开',
-  collapseAll: '全部收起',
   saveLocate: '定位',
   accountsSummaryOne: '1 个账户',
   accountsSummaryMany: '{count} 个账户',
@@ -390,12 +401,12 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   usageTokens: 'Token',
   usageTokensIn: '入',
   usageTokensOut: '出',
-  usageMonthly: '月额度',
   usagePurchased: '已购',
   usageFree: '赠送',
   usageFiveHour: '5 小时窗口',
   usageWeekly: '每周窗口',
   usageMonthlyLeft: '月额度剩余',
+  usageMonthlyDepleted: '月额度已用完，已购与赠送余额将无法使用。',
   usageExceeded: '已超限',
   usageReset: '重置于',
   usagePartial: '部分端点数据不可用',
@@ -458,6 +469,8 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   accountAddPaste: '粘贴密钥',
   accountAddConfirm: '添加',
   accountAddCancel: '取消开通',
+  accountAddStart: '开始登录',
+  accountAddMethod: '添加方式',
   accountAddLinkHint: '若登录页面未自动打开，请点击下方链接。',
   accountAddOpenLink: '打开浏览器登录',
   accountNamePlaceholder: '备注名（可选，网页登录时默认使用账户名）',
@@ -480,20 +493,34 @@ export const zh: Record<SettingsCommandCodeKey, string> = {
   privacyTitle: '隐私与安全',
   integrationsTitle: '集成与显示',
   serviceStatusTitle: '服务状态',
-  serviceStatusHint: '数据来自官方状态页的公开探测记录，由 GitHub Actions 定时检测，可能滞后数小时。',
+  serviceStatusHint: '官方数据来自状态页的公开记录，仅在状态变化或每日汇总时发布；本机连通由宿主刚探测。',
   serviceStatusChecking: '正在检查…',
   serviceStatusUp: '服务正常',
   serviceStatusDegraded: '部分降级',
   serviceStatusDown: '服务中断',
   serviceStatusUnknown: '状态未知',
-  serviceStatusUptimeWeek: '7 天可用率 {value}',
-  serviceStatusUptimeMonth: '30 天可用率 {value}',
-  serviceStatusResponseWeek: '近 7 天平均响应 {value}',
-  serviceStatusCheckedJustNow: '刚刚检测',
-  serviceStatusCheckedMinutes: '最后检测：{count} 分钟前',
-  serviceStatusCheckedHours: '最后检测：{count} 小时前',
-  serviceStatusCheckedDays: '最后检测：{count} 天前',
-  serviceStatusCheckedUnknown: '最后检测时间未知',
+  // 服务状态行分「官方」「本机」两行；分组头徽标在本机连不上时改报本机。
+  serviceStatusOfficial: '官方',
+  serviceStatusLocal: '本机',
+  serviceStatusUptime: '可用率 {value}',
+  serviceStatusBadgeLocalHttp: '本机连接异常',
+  serviceStatusBadgeLocalTimeout: '本机连接超时',
+  serviceStatusBadgeLocalUnreachable: '本机无法连接',
+  serviceStatusUptimeWeek: '7 天 {value}',
+  serviceStatusUptimeMonth: '30 天 {value}',
+  serviceStatusResponseWeek: '平均响应 {value}',
+  serviceStatusUpdatedJustNow: '刚刚更新',
+  serviceStatusUpdatedMinutes: '{count} 分钟前更新',
+  serviceStatusUpdatedHours: '{count} 小时前更新',
+  serviceStatusUpdatedDays: '{count} 天前更新',
+  serviceStatusUpdatedUnknown: '更新时间未知',
+  serviceStatusLag: '官方数据仅在状态变化或每日汇总时发布，可能滞后数小时。',
+  serviceStatusLocalChecking: '正在探测…',
+  serviceStatusLocalOk: '连通正常 · {latency} ms',
+  serviceStatusLocalHttp: '连接异常（HTTP {status}）',
+  serviceStatusLocalTimeout: '连接超时',
+  serviceStatusLocalUnreachable: '无法连接',
+  serviceStatusLocalUnavailable: '未知（宿主未提供探测）',
   serviceStatusStale: '无法获取状态数据，以下为上次成功获取的结果。',
   serviceStatusUnavailable: '无法获取状态数据。',
   serviceStatusOpen: '打开状态页',
@@ -546,8 +573,6 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   groupOverriddenOne: '1 customized',
   groupOverriddenMany: '{count} customized',
   groupInvalid: 'Needs a fix',
-  expandAll: 'Expand all',
-  collapseAll: 'Collapse all',
   saveLocate: 'Show',
   accountsSummaryOne: '1 account',
   accountsSummaryMany: '{count} accounts',
@@ -652,12 +677,12 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   usageTokens: 'Tokens',
   usageTokensIn: 'in',
   usageTokensOut: 'out',
-  usageMonthly: 'Monthly',
   usagePurchased: 'Purchased',
   usageFree: 'Free',
   usageFiveHour: '5-hour window',
   usageWeekly: 'Weekly window',
   usageMonthlyLeft: 'Monthly left',
+  usageMonthlyDepleted: 'Monthly credit is used up; purchased and free credit can no longer be spent.',
   usageExceeded: 'Exceeded',
   usageReset: 'Resets',
   usagePartial: 'Some endpoint data unavailable',
@@ -720,6 +745,8 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   accountAddPaste: 'Paste key',
   accountAddConfirm: 'Add',
   accountAddCancel: 'Cancel setup',
+  accountAddStart: 'Start sign-in',
+  accountAddMethod: 'Method',
   accountAddLinkHint: 'If the sign-in page did not open automatically, use the link below.',
   accountAddOpenLink: 'Open the sign-in page',
   accountNamePlaceholder: 'Name (optional; sign-in uses the account name)',
@@ -742,20 +769,33 @@ export const en: Record<SettingsCommandCodeKey, string> = {
   privacyTitle: 'Privacy & security',
   integrationsTitle: 'Integrations & display',
   serviceStatusTitle: 'Service status',
-  serviceStatusHint: 'Public probe data from the official status page (GitHub Actions checks; may lag by hours).',
+  serviceStatusHint: 'Published data comes from the official status page and is only written on a status change or the daily summary; local connectivity is probed by the host just now.',
   serviceStatusChecking: 'Checking…',
   serviceStatusUp: 'Operational',
   serviceStatusDegraded: 'Degraded performance',
   serviceStatusDown: 'Service outage',
   serviceStatusUnknown: 'Status unknown',
-  serviceStatusUptimeWeek: '7-day uptime {value}',
-  serviceStatusUptimeMonth: '30-day uptime {value}',
-  serviceStatusResponseWeek: '7-day avg response {value}',
-  serviceStatusCheckedJustNow: 'Checked just now',
-  serviceStatusCheckedMinutes: 'Last checked {count} min ago',
-  serviceStatusCheckedHours: 'Last checked {count} h ago',
-  serviceStatusCheckedDays: 'Last checked {count} d ago',
-  serviceStatusCheckedUnknown: 'Last check time unknown',
+  serviceStatusOfficial: 'Official',
+  serviceStatusLocal: 'This device',
+  serviceStatusUptime: 'uptime {value}',
+  serviceStatusBadgeLocalHttp: 'Connection error here',
+  serviceStatusBadgeLocalTimeout: 'Timing out here',
+  serviceStatusBadgeLocalUnreachable: 'Unreachable here',
+  serviceStatusUptimeWeek: '7d {value}',
+  serviceStatusUptimeMonth: '30d {value}',
+  serviceStatusResponseWeek: 'avg {value}',
+  serviceStatusUpdatedJustNow: 'updated just now',
+  serviceStatusUpdatedMinutes: 'updated {count} min ago',
+  serviceStatusUpdatedHours: 'updated {count} h ago',
+  serviceStatusUpdatedDays: 'updated {count} d ago',
+  serviceStatusUpdatedUnknown: 'update time unknown',
+  serviceStatusLag: 'Official data is only published on a status change or the daily summary, so it may lag by hours.',
+  serviceStatusLocalChecking: 'Probing…',
+  serviceStatusLocalOk: 'Reachable · {latency} ms',
+  serviceStatusLocalHttp: 'Error (HTTP {status})',
+  serviceStatusLocalTimeout: 'Timed out',
+  serviceStatusLocalUnreachable: 'Unreachable',
+  serviceStatusLocalUnavailable: 'Unknown (host provides no probe)',
   serviceStatusStale: 'Status data unavailable; showing the last known result.',
   serviceStatusUnavailable: 'Status data unavailable.',
   serviceStatusOpen: 'Open status page',
