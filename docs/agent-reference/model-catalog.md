@@ -21,6 +21,12 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   the `mode`/`permissionMode` enums are byte-identical, and the official changelog has no entry for
   1.85.0–1.86.1 (static artifact comparison only — chapter 7 item 14).
 
+  **Follow-up check (2026-10-21, CLI 1.86.1 → 1.86.3):** the pinned constant moved for the
+  `x-command-code-version` header only. Both patch releases are silent upstream (no changelog entry) and
+  leave every snapshot here untouched: the registry, effort map, subscription plans and ZDR exception set
+  are identical, the live catalog still serves 96 / 104 ids with `catalogVersion` `2a2c334e…`, and the only
+  artifact additions are CLI-local (`distrustCompromisedRoots` and the experimental taste/learn UI).
+
   - `KNOWN_EFFORTS` — model → selectable reasoning-effort levels. Authoritative source is the live
     `?view=client` catalog's `reasoningEfforts` (since command-code@1.82.4 the CLI no longer keeps this map
     bundled — `getSupportedEfforts()` resolves it through the catalog, whose embedded bootstrap snapshot
