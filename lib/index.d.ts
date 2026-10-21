@@ -61,7 +61,7 @@ type CommandCodeProtocol = 'cli' | 'openai' | 'messages';
 declare const DEFAULT_MAX_OUTPUT_TOKENS = 131072;
 //#endregion
 //#region src/adapter.d.ts
-declare const COMMAND_CODE_CLI_VERSION = "1.84.0";
+declare const COMMAND_CODE_CLI_VERSION = "1.86.1";
 declare const DEFAULT_API_BASE = "https://api.commandcode.ai";
 /**
  * The output budget this bundle asks for, and the ceiling it will never exceed.
@@ -1050,7 +1050,7 @@ declare const KNOWN_IMAGE_MODELS: ReadonlySet<string>;
  * request can still name it. At the 1.84.0 sync both this row and
  * `stealth/cat-jam:free` were also served by the `?view=client` catalog, which
  * is where the 1.82.4 verdict came from; the catalog stopped serving cat-jam on
- * 2026-10-20, so the artifact's exclusion set is now its only evidence.
+ * 2026-10-20, and the artifact followed at 1.86.1 (see the prune note below).
  *
  * command-code@1.82.4 moved the authority for this verdict: `knownModelSupportsZdr`
  * no longer negates a bundled Set, it returns `resolveKnownCatalogModel({model,
@@ -1089,11 +1089,24 @@ declare const KNOWN_IMAGE_MODELS: ReadonlySet<string>;
  * neither source alone is complete, which is why this set is not simply "what
  * the CLI says".
  *
- * The 2026-10-20 catalog-only sync changes no membership: `stealth/cat-jam:free`
+ * The 2026-10-20 catalog-only sync changed no membership: `stealth/cat-jam:free`
  * left both catalog views (its `zdr:false` verdict is no longer served), but the
- * 1.84.0 artifact's exclusion set still names it and this set is the union, so
- * membership stays at 25. The MiniMax M3.1 Flash launch pair is ZDR-covered
+ * 1.84.0 artifact's exclusion set still named it and this set is the union, so
+ * membership stayed at 25. The MiniMax M3.1 Flash launch pair is ZDR-covered
  * (`zdr:true` on both ids) and joins no set.
+ *
+ * 2026-10-21 (command-code@1.86.1 sync) prunes the set 25 -> 18, and for the
+ * first time the two sources agree exactly: the 1.86.1 artifact's
+ * `modelSupportsZdr` set and the live catalog's `zdr:false` rows are the same 18
+ * ids (`knownModelSupportsZdr` is gone from the artifact). +3: `claude-fable-5`,
+ * `claude-fable-5-1` and `tencent/hy4-preview`. -10: the nine models the catalog
+ * flipped to `zdr:true` (Muse Spark 1.1 / 1.2 / 1.3, Muse Wonder 1.0, Grok 4.5 /
+ * 4.6, MiMo V2.6 Flash / Pro, GLM-5.2 Fast) plus `stealth/cat-jam:free`, which
+ * no source serves any more. Cat-jam is removed by explicit decision (see the
+ * decision record, chapter 7 item 13): keeping a retired id in the negative set
+ * is defense for stale sessions, not evidence, and the 1.86.1 artifact itself
+ * dropped it. A verdict flip here is positive evidence, never "listed before,
+ * absent now".
  */
 declare const KNOWN_NON_ZDR_MODELS: ReadonlySet<string>;
 /**
@@ -1123,8 +1136,8 @@ declare const KNOWN_THINKING_MODELS: ReadonlySet<string>;
  * `/docs/plans/max` and `/docs/resources/pricing-limits`). Each plan's model
  * list is a superset of the one below it: Go ⊂ GOAT ⊂ Pro ⊂ Provider/Max.
  * Models absent from every plan list (Claude Opus/Fable, Fugu Ultra) are
- * Provider-tier. Re-verified at command-code@1.82.4 (2026-10-16) against the
- * live `?view=client` catalog: 93 ids, still a strict superset chain. Mistral
+ * Provider-tier. Re-verified at command-code@1.86.1 (2026-10-21) against the
+ * live `?view=client` catalog: 104 ids, still a strict superset chain. Mistral
  * Large 4
  * (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair
  * added Claude Haiku 5.5 at Pro and the free Glyph Cluster preview at Go.
@@ -1133,11 +1146,12 @@ declare const KNOWN_THINKING_MODELS: ReadonlySet<string>;
  * train adds Qwen 3.8 Max Prime at GOAT plus Muse Spark Open, Nemotron 3.5
  * Super VL and the free Cat Jam preview at Go, and drops Ling 3.0 Flash Sante,
  * which left the live catalog. Every other
- * tier is unchanged.
+ * tier is unchanged. The 1.86.1 sync (2026-10-21) adds only the Ornith 1.5 122B
+ * launch pair at Go.
  * The only removals since 1.49.0 are the two retired stealth previews (Pixel
- * Canary at 1.73.1, Space Bunny Alpha at 1.74.3) and Ling 3.0 Flash Sante
- * (2026-10-16). Per-entry tags below name the
- * releases that added or moved each row.
+ * Canary at 1.73.1, Space Bunny Alpha at 1.74.3), Ling 3.0 Flash Sante
+ * (2026-10-16) and the retired Cat Jam preview (2026-10-20). Per-entry tags
+ * below name the releases that added or moved each row.
  *
  * The Provider API exposes no plan metadata, so this snapshot is the source of
  * truth for the picker's plan annotation — it answers "which plan do I need to

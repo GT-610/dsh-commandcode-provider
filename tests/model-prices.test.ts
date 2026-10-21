@@ -157,12 +157,14 @@ test('the badge and the price revert on the same instant', () => {
 test('the dated MiniMax M3.1 Flash free deal lapses on its published instant', () => {
   // 2026-10-20 sync: the free twin carries an explicit end
   // (`minimax-m3-1-flash-free`, expires 2026-10-21T10:45:00Z, Beijing 18:45),
-  // unlike the open-ended "while capacity lasts" previews. The FREE badge must
-  // stop on that instant; the `:free` id itself is priced at zero by id suffix,
-  // so only the badge moves — the row is not a `listRates` revert.
+  // unlike the open-ended "while capacity lasts" previews. The 2026-10-21 check
+  // found the page had moved that end one day out (2026-10-22T10:45Z, Beijing
+  // 10-22 18:45), so the pinned instant follows the published figure. The FREE
+  // badge must stop on that instant; the `:free` id itself is priced at zero by
+  // id suffix, so only the badge moves — the row is not a `listRates` revert.
   const id = 'minimax/minimax-m3.1-flash:free'
-  const before = Date.parse('2026-10-21T10:44:59.999Z')
-  const after = Date.parse('2026-10-21T10:45:00Z')
+  const before = Date.parse('2026-10-22T10:44:59.999Z')
+  const after = Date.parse('2026-10-22T10:45:00Z')
   assert.equal(dealLabel(id, before), 'FREE')
   assert.equal(dealLabel(id, after), undefined)
   for (const at of [before, after]) {

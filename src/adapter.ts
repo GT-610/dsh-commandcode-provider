@@ -88,10 +88,12 @@ export { DEFAULT_MAX_OUTPUT_TOKENS, MODEL_CATALOG_TTL_MS } from './gateway-facts
 // Request / connection defaults (protocol constants). The model/plan/deal
 // capability snapshot lives in ./capabilities.ts — the sync-only surface.
 // ---------------------------------------------------------------------------
-// Rides every request as `x-command-code-version`. The 1.84.0 bump is a pure
-// header sync: the 1.82.5 -> 1.84.0 artifacts carry identical model/effort/
-// subscription/ZDR tables (see CHANGELOG), so no runtime behaviour moves with it.
-export const COMMAND_CODE_CLI_VERSION = '1.84.0'
+// Rides every request as `x-command-code-version`. The 1.86.1 bump is a pure
+// header sync: the 1.84.0 -> 1.86.1 artifacts add no runtime contract this
+// plugin consumes (the only new endpoint is the CLI's own `/alpha/artifacts`),
+// so no transport behaviour moves with it. The capability snapshot DOES move —
+// see ./capabilities.ts.
+export const COMMAND_CODE_CLI_VERSION = '1.86.1'
 export const DEFAULT_API_BASE = 'https://api.commandcode.ai'
 
 /**

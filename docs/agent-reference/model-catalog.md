@@ -6,14 +6,20 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   `dsh-commandcode-upstream` skill for the exact extraction procedures; `src/adapter.ts` imports them and
   keeps only stable wire/runtime logic):
 
-  **Latest sync (2026-10-20, catalog-only):** the CLI artifact stayed at `1.84.0` while the live catalog
-  changed — the default view went 93 → 94 ids. Added MiniMax M3.1 Flash (`minimax/minimax-m3.1-flash` +
-  `:free`) with five efforts, Vision, Go tier, ZDR coverage, paid rates `$0.15/$0.60/$0.015` and a dated
-  free deal ending `2026-10-21T10:45Z`; removed `stealth/cat-jam:free` from the model tables (both catalog
-  views, the pricing and docs pages dropped it; it stays in `KNOWN_NON_ZDR_MODELS` because the 1.84.0
-  artifact's exclusion set still names it — [decision record](../决策记录.md#七上游快照同步边界) chapter 7
-  item 13). Counts: efforts 65 → 66, plans 93 → 94, image 70 → 72, deals 7 → 7, ZDR 25 → 25; vendored
-  price rows 92 → 93, output-limit rows 78 → 80.
+  **Latest sync (2026-10-21, CLI 1.84.0 → 1.86.1):** the default catalog view went 94 → 96 ids and
+  `?view=client` 102 → 104. Added Ornith 1.5 122B (`ornith/ornith-1.5-122b` + `:free`): 262,144 context,
+  text + image, automatic reasoning (no effort levels), Go tier, ZDR covered, paid `$0.16/$0.64/$0.02`,
+  free twin 100% off until `2026-10-22T06:00Z`. The MiniMax M3.1 Flash free deal was extended one day
+  (`2026-10-21T10:45Z` → `2026-10-22T10:45Z`). `stealth/cat-jam:free` had already left the model tables on
+  2026-10-20 and also left `KNOWN_NON_ZDR_MODELS` at this sync (the 1.86.1 artifact dropped it; explicit
+  user decision — [decision record](../决策记录.md#七上游快照同步边界) chapter 7 item 14). The ZDR exception
+  set went 25 → 18: the artifact's `modelSupportsZdr` set now matches the catalog's `zdr:false` rows
+  id-for-id — +3 (`claude-fable-5`, `claude-fable-5-1`, `tencent/hy4-preview`), −10 (nine models flipped to
+  `zdr:true` plus cat-jam). Counts: efforts 66 → 66, plans 94 → 96, image 72 → 74, deals 7 → 8, ZDR 25 → 18;
+  vendored price rows 93 → 94, output-limit rows 80 → 81. The CLI artifact's only new endpoint is
+  `/alpha/artifacts` (its own artifact publishing, unused by this plugin); headers, provider endpoints and
+  the `mode`/`permissionMode` enums are byte-identical, and the official changelog has no entry for
+  1.85.0–1.86.1 (static artifact comparison only — chapter 7 item 14).
 
   - `KNOWN_EFFORTS` — model → selectable reasoning-effort levels. Authoritative source is the live
     `?view=client` catalog's `reasoningEfforts` (since command-code@1.82.4 the CLI no longer keeps this map

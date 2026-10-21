@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.5] - 2026-10-21
+
+### Changed
+
+- **同步 Command Code CLI `1.84.0` → `1.86.1`（纯请求头同步）。** 10-20 一晚连发 4 个补丁版本（`1.85.0`／`1.85.1`／`1.86.0`／`1.86.1`，UTC 17:54Z 起），**官方变更日志页面仍停在 `1.84.0`、CLI 通道没有任何新条目**，结论全部来自产物级静态比对。协议面零变化：请求头集合、`/provider/v1/*` 端点、`/alpha/generate` 的 `mode`／`permissionMode` 枚举、reasoning 重放与 `promptCache` 字面量逐项相同；唯一新增端点是 CLI 自身的 `POST /alpha/artifacts`（把报告/图表/页面发布成链接，2 MB 上限、`private`/`public`），插件不经过该路径。因此 `COMMAND_CODE_CLI_VERSION` 只随请求头更新，运行时行为不变；产物内嵌 `catalogVersion` 更新为 `2a2c334e…`，与实时目录一致。
+
+- **ZDR（零数据保留）例外集 25 → 18，首次做到两个来源逐条一致。** `1.86.1` 产物的 `modelSupportsZdr` 集合与实时目录的 `zdr:false` 行是同一批 18 个 id（`knownModelSupportsZdr` 已从产物删除）。**新增 3**：`claude-fable-5`、`claude-fable-5-1`、`tencent/hy4-preview`。**移除 10**：9 个模型被目录改判 `zdr:true`（`meta/muse-spark-1.1`／`1.2`／`1.3`、`meta/muse-wonder-1.0`、`xai/grok-4.5`／`4.6`、`xiaomi/mimo-v2.6-flash`／`pro`、`zai-org/GLM-5.2-Fast`），另加已从两个目录视图、定价页与文档页整体下架的 `stealth/cat-jam:free`。**`cat-jam` 是用户显式决定移除**，不是「从产物消失即视为已覆盖」：保留它只是对老会话的猜测，且会与官方 18 条长期分叉，理由见[《决策记录》第七章第 14 条](docs/决策记录.md#七上游快照同步边界)。`tests/zdr.test.ts` 的成员断言按新集合有意反转，并把 9 个改判模型的「返回 true」路径补进用例。
+
+- **MiniMax M3.1 Flash 免费促销延期一天。** 定价页到期时间由 `2026-10-21T10:45Z` 改为 `2026-10-22T10:45Z`（北京时间 10-22 18:45），`KNOWN_DEALS` 的 `expiresAt` 随之上移，FREE 徽标随之多显示一天；`tests/model-prices.test.ts` 的到期边界断言同步改到新时刻。
+
+- **`deepseek-v4.1-flash` 月额度上调（费率不变）。** 价格表重生成：GOAT $80 → **$100**、Pro $90 → **$110**；该行仍是 $0.15/$0.60/$0.003，峰谷窗口与倍率不变。
+
+### Added
+
+- **新增 Ornith 1.5 122B：付费 `ornith/ornith-1.5-122b` 与限时免费 `ornith/ornith-1.5-122b:free`。** 262,144 上下文、文本 + 图像（Vision）、`reasoning:true` 但无 `reasoningEfforts`（自动推理，选择器不提供档位）、Go 起、ZDR 覆盖。付费行 $0.16 输入 / $0.64 输出 / $0.02 缓存读（每百万 token），月额度 Go $6 / GOAT $20 / Pro $30，价格表 93 → 94 行；免费行 100% off 至 `2026-10-22T06:00Z`（北京时间 10-22 14:00，官方文案 "until 11:00 PM PT on October 21"），无每日请求上限。快照同步：`KNOWN_PLANS` 94 → 96、`KNOWN_IMAGE_MODELS` 72 → 74、`KNOWN_THINKING_MODELS` 15 → 17、`KNOWN_DEALS` 7 → 8；`KNOWN_EFFORTS` 不变（无档位）。
+
+- **输出上限表新增 `mistral/mistral-large-4`（262,144）。** 由 `scripts/sync-output-limits.mjs` 重生成，80 → 81 行；同时 `minimax` 三行由 512,000 修正为 **524,288**（供应商元数据把十进制 512K 改成二进制）。
+
+### Verification
+
+- `npm run typecheck` 退出码 0；`npm test` **1058／1058**；`npm run build` 两段通过、`lib/` 产物已重建。
+- **证据边界**：公开 GET 采集（14 个源全部 HTTP 200，2026-10-21 08:34 北京时间）；审计 `incomplete` 的 4 条 error 是 Ornith／MiniMax 四个 id 缺定价映射别名（目录侧单源，不是抓取失败），已按定价页人工核对。**未做**：真实账号登录、付费生成、服务端协议验证与浏览器渲染。
+
 ## [0.14.4] - 2026-10-20
 
 ### Changed

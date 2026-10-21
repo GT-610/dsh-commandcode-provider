@@ -17,7 +17,7 @@ import {
   supportsZeroDataRetention,
 } from '../src/capabilities.ts'
 
-test('the ZDR exception list is the live catalog zdr verdict (command-code@1.84.0)', () => {
+test('the ZDR exception list is the live catalog zdr verdict (command-code@1.86.1)', () => {
   // command-code@1.82.4 moved the authority for this verdict out of the CLI
   // artifact: `knownModelSupportsZdr` no longer negates a bundled Set, it reads
   // `resolveKnownCatalogModel({model,catalog})?.zdr ?? false`. So this list is
@@ -37,51 +37,51 @@ test('the ZDR exception list is the live catalog zdr verdict (command-code@1.84.
   // adds `stealth/cat-jam:free` (the second live stealth preview), for 24
   // members: LongCat + cat-jam with nothing removed.
   //
-  // 1.84.0 re-keys LongCat instead of widening coverage, so the set grows by a
-  // net one and 25 is the membership to pin. The catalog flipped the `:free`
-  // row the other way — it now serves `zdr:true` for `meituan/LongCat-2.0:free`
-  // — while the paid `meituan/LongCat-2.0` id, the one a request can still name,
-  // took that slot with `zdr:false`. Both ids therefore crossed this snapshot in
-  // opposite directions, which is why the `:free` row is absent below and the
-  // bare id is present: only the pair together tells the story, and dropping
-  // just one of them would read as a coverage change rather than a re-key.
+  // 1.84.0 re-keys LongCat instead of widening coverage, so the set grew by a
+  // net one and 25 was the membership pinned here. The catalog flipped the
+  // `:free` row the other way — it served `zdr:true` for
+  // `meituan/LongCat-2.0:free` — while the paid `meituan/LongCat-2.0` id, the
+  // one a request can still name, took that slot with `zdr:false`.
   //
-  // 1.84.0 also adds `reflection/beam:free`, a catalog-only row: the artifact's
-  // embedded model snapshot does not carry it, so `?view=client` is the sole
+  // 1.84.0 also added `reflection/beam:free`, a catalog-only row: the artifact's
+  // embedded model snapshot did not carry it, so `?view=client` was the sole
   // evidence for its `zdr:false` verdict — the same position `stealth/cat-jam:free`
   // was in at 1.82.4.
   //
   // 2026-10-20 catalog-only sync: `stealth/cat-jam:free` left both catalog views
-  // (and the pricing/docs pages), so its `zdr:false` verdict is no longer
-  // served; the 1.84.0 artifact's exclusion set still names it and this table is
-  // the UNION of both sources, so membership stays at 25. The MiniMax M3.1 Flash
-  // launch pair is `zdr:true` on both ids and joins no set.
+  // (and the pricing/docs pages), so its `zdr:false` verdict was no longer
+  // served; the 1.84.0 artifact's exclusion set still named it and this table is
+  // the UNION of both sources, so membership stayed at 25. The MiniMax M3.1
+  // Flash launch pair is `zdr:true` on both ids and joined no set.
+  //
+  // 2026-10-21 (command-code@1.86.1 sync) prunes the set 25 -> 18, and for the
+  // first time the two sources agree EXACTLY: the artifact's `modelSupportsZdr`
+  // set and the catalog's `zdr:false` rows are the same 18 ids
+  // (`knownModelSupportsZdr` is gone from the artifact). +3: `claude-fable-5`,
+  // `claude-fable-5-1`, `tencent/hy4-preview`. -10: the nine the catalog flipped
+  // to `zdr:true` (Muse Spark 1.1/1.2/1.3, Muse Wonder 1.0, Grok 4.5/4.6, MiMo
+  // V2.6 Flash/Pro, GLM-5.2 Fast) plus `stealth/cat-jam:free`, which no source
+  // serves any more — removed by explicit decision (decision record, chapter 7
+  // item 13), not by inferring coverage from its absence.
   assert.deepEqual([...KNOWN_NON_ZDR_MODELS].sort(), [
     'MiniMaxAI/MiniMax-M3',
     'Qwen/Qwen3.8-Max-0902',
+    'claude-fable-5',
+    'claude-fable-5-1',
     'deepseek/deepseek-v4.1-flash-fast',
     'meituan/LongCat-2.0',
-    'meta/muse-spark-1.1',
-    'meta/muse-spark-1.2',
     'meta/muse-spark-1.2-contributor',
-    'meta/muse-spark-1.3',
     'meta/muse-spark-1.3-contributor',
-    'meta/muse-wonder-1.0',
     'minimax/minimax-m3-free',
     'poolside/laguna-s-2.1-free',
     'reflection/beam:free',
     'sakana/fugu-ultra',
-    'stealth/cat-jam:free',
     'stealth/glyph-cluster:free',
     'stepfun/Step-3.7-Flash',
     'stepfun/Step-5-Preview',
-    'xai/grok-4.5',
-    'xai/grok-4.6',
-    'xiaomi/mimo-v2.6-flash',
-    'xiaomi/mimo-v2.6-pro',
+    'tencent/hy4-preview',
     'xiaomi/mimo-v2.6-pro-ultraspeed',
     'z-ai/glm-5.3-flashx',
-    'zai-org/GLM-5.2-Fast',
   ])
 })
 
@@ -96,7 +96,9 @@ test('supportsZeroDataRetention answers false for every listed model and true ot
   // exactly the reverse of 1.82.4, when the `:free` row held that slot and this
   // id was still ZDR covered. Both retired stealth previews stay here on
   // purpose: they left the CLI's exclusion sets in 1.77.0, so the snapshot
-  // still answers true for them.
+  // still answers true for them. The nine ids the 1.86.1 sync released from the
+  // exception set (Muse Spark 1.1/1.2/1.3, Muse Wonder, Grok 4.5/4.6, MiMo V2.6
+  // Flash/Pro, GLM-5.2 Fast) are ZDR-covered now and are pinned below.
   for (const id of [
     'deepseek/deepseek-v4.1-flash',
     'deepseek/deepseek-v4-flash',
@@ -110,6 +112,15 @@ test('supportsZeroDataRetention answers false for every listed model and true ot
     'moonshotai/Kimi-K3',
     'z-ai/glm-5.3-flash',
     'zai-org/GLM-5',
+    'zai-org/GLM-5.2-Fast',
+    'meta/muse-spark-1.1',
+    'meta/muse-spark-1.2',
+    'meta/muse-spark-1.3',
+    'meta/muse-wonder-1.0',
+    'xai/grok-4.5',
+    'xai/grok-4.6',
+    'xiaomi/mimo-v2.6-flash',
+    'xiaomi/mimo-v2.6-pro',
     'MiniMaxAI/MiniMax-M2.5',
     'a-model-from-the-future',
   ]) {

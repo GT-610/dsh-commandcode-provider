@@ -4,13 +4,13 @@
  * subscription-plan labels, deals, and hourly (peak/off-peak) pricing.
  *
  * Everything here is synced from official sources — the command-code CLI
- * bundle's model table (`dist/cli.mjs`, re-verified at command-code@1.84.0), the
+ * bundle's model table (`dist/cli.mjs`, re-verified at command-code@1.86.1), the
  * live model catalog (`GET /provider/v1/models?view=client`, the authority for
  * capability fields since 1.82.4), and the official plan/pricing/model docs; see
  * the dsh-commandcode-upstream skill for the extraction procedures. The
- * 2026-10-20 sync is catalog-only: the CLI artifact stayed at 1.84.0 while the
- * catalog added the MiniMax M3.1 Flash launch pair and dropped the Stealth Cat
- * Jam preview. Keeping the snapshot in its own module
+ * 2026-10-21 sync moves the CLI from 1.84.0 to 1.86.1 and picks up the Ornith
+ * 1.5 122B launch pair in the catalog, the ZDR exclusion-set prune and the
+ * MiniMax M3.1 Flash promo extension. Keeping the snapshot in its own module
  * confines those frequent sync diffs here: src/adapter.ts holds only the stable
  * wire/runtime logic. The read helpers live here too, for the same reason.
  *
@@ -23,7 +23,7 @@ import { PLAN_LABELS, PLAN_ORDER } from './plan-tiers.ts'
 export { PLAN_LABELS, PLAN_ORDER } from './plan-tiers.ts'
 
 export const KNOWN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
-  // Re-verified against the authoritative command-code@1.84.0 model table. From
+  // Re-verified against the authoritative command-code@1.86.1 model table. From
   // 1.82.4 the CLI no longer keeps this map bundled: `getSupportedEfforts()`
   // resolves it through the model catalog (`reasoningEfforts`), served live at
   // `GET /provider/v1/models?view=client` and falling back to an embedded
@@ -149,10 +149,11 @@ export const KNOWN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   // and lived in KNOWN_THINKING_MODELS. The hidden
   // `minimax/minimax-m3-free` sibling gained the same set in the bundle.
   'MiniMaxAI/MiniMax-M3': ['low', 'medium', 'high'],
-  // 2026-10-20 (catalog-only sync; the 1.84.0 artifact predates the model): the
-  // MiniMax M3.1 Flash launch pair carries the full five-level set, unlike its
-  // three-level M3 sibling. Both ids come from the live `?view=client` catalog —
-  // the same catalog-side evidence `reflection/beam:free` arrived on.
+  // 2026-10-20 (catalog-only sync; the 1.86.1 artifact folded the pair in on
+  // 2026-10-21): the MiniMax M3.1 Flash launch pair carries the full five-level
+  // set, unlike its three-level M3 sibling. Both ids came from the live
+  // `?view=client` catalog — the same catalog-side evidence
+  // `reflection/beam:free` arrived on.
   'minimax/minimax-m3.1-flash': ['low', 'medium', 'high', 'xhigh', 'max'],
   'minimax/minimax-m3.1-flash:free': ['low', 'medium', 'high', 'xhigh', 'max'],
   // `stealth/space-bunny-alpha` (command-code@1.65.0, `max` added by 1.73.4)
@@ -197,9 +198,10 @@ export const KNOWN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   // the full five-level set — left every model table on 2026-10-20: the live
   // catalog (both views), the pricing page and the models docs page stopped
   // serving the row, so there is no selectable model left to describe. The
-  // 1.84.0 artifact still names it in its ZDR exclusion set, which is why
-  // `KNOWN_NON_ZDR_MODELS` keeps it — the ZDR table tracks upstream exception
-  // membership, not the served-model set (decision record, chapter 7 item 13).
+  // 1.84.0 artifact still named it in its ZDR exclusion set, which kept one
+  // entry in `KNOWN_NON_ZDR_MODELS` until the 1.86.1 artifact dropped it as
+  // well; that table no longer carries the id (decision record, chapter 7
+  // item 13).
 }
 
 /**
@@ -310,6 +312,11 @@ export const KNOWN_IMAGE_MODELS: ReadonlySet<string> = new Set([
   'moonshotai/Kimi-K2.7-Code',
   'moonshotai/Kimi-K2.7-Code-Highspeed',
   'moonshotai/Kimi-K3',
+  // 2026-10-21 (command-code@1.86.1 sync): inputModalities:["text","image"] in
+  // the live `?view=client` catalog and `caps.vision: true` on both the pricing
+  // page and the models docs page. Free twin included — same model, promo id.
+  'ornith/ornith-1.5-122b',
+  'ornith/ornith-1.5-122b:free',
   'sakana/fugu-ultra',
   // command-code@1.65.0; Vision per the official registry and inputModalities.
   'stepfun/Step-3.7-Flash',
@@ -363,7 +370,7 @@ export const KNOWN_IMAGE_MODELS: ReadonlySet<string> = new Set([
  * request can still name it. At the 1.84.0 sync both this row and
  * `stealth/cat-jam:free` were also served by the `?view=client` catalog, which
  * is where the 1.82.4 verdict came from; the catalog stopped serving cat-jam on
- * 2026-10-20, so the artifact's exclusion set is now its only evidence.
+ * 2026-10-20, and the artifact followed at 1.86.1 (see the prune note below).
  *
  * command-code@1.82.4 moved the authority for this verdict: `knownModelSupportsZdr`
  * no longer negates a bundled Set, it returns `resolveKnownCatalogModel({model,
@@ -402,30 +409,38 @@ export const KNOWN_IMAGE_MODELS: ReadonlySet<string> = new Set([
  * neither source alone is complete, which is why this set is not simply "what
  * the CLI says".
  *
- * The 2026-10-20 catalog-only sync changes no membership: `stealth/cat-jam:free`
+ * The 2026-10-20 catalog-only sync changed no membership: `stealth/cat-jam:free`
  * left both catalog views (its `zdr:false` verdict is no longer served), but the
- * 1.84.0 artifact's exclusion set still names it and this set is the union, so
- * membership stays at 25. The MiniMax M3.1 Flash launch pair is ZDR-covered
+ * 1.84.0 artifact's exclusion set still named it and this set is the union, so
+ * membership stayed at 25. The MiniMax M3.1 Flash launch pair is ZDR-covered
  * (`zdr:true` on both ids) and joins no set.
+ *
+ * 2026-10-21 (command-code@1.86.1 sync) prunes the set 25 -> 18, and for the
+ * first time the two sources agree exactly: the 1.86.1 artifact's
+ * `modelSupportsZdr` set and the live catalog's `zdr:false` rows are the same 18
+ * ids (`knownModelSupportsZdr` is gone from the artifact). +3: `claude-fable-5`,
+ * `claude-fable-5-1` and `tencent/hy4-preview`. -10: the nine models the catalog
+ * flipped to `zdr:true` (Muse Spark 1.1 / 1.2 / 1.3, Muse Wonder 1.0, Grok 4.5 /
+ * 4.6, MiMo V2.6 Flash / Pro, GLM-5.2 Fast) plus `stealth/cat-jam:free`, which
+ * no source serves any more. Cat-jam is removed by explicit decision (see the
+ * decision record, chapter 7 item 13): keeping a retired id in the negative set
+ * is defense for stale sessions, not evidence, and the 1.86.1 artifact itself
+ * dropped it. A verdict flip here is positive evidence, never "listed before,
+ * absent now".
  */
 export const KNOWN_NON_ZDR_MODELS: ReadonlySet<string> = new Set([
   'MiniMaxAI/MiniMax-M3',
   'Qwen/Qwen3.8-Max-0902',
+  // 2026-10-21 (command-code@1.86.1 sync). New to the exclusion set: the 1.84.0
+  // artifact did not name either Fable id, while the 1.86.1 artifact and the
+  // live catalog both serve `zdr:false` for them.
+  'claude-fable-5',
+  'claude-fable-5-1',
   // command-code@1.67.0. The 1.67.0 artifact lists it in BOTH anchor sets, so
   // the CLI's own ZDR predicate excludes it. Unlike the retired stealth
   // previews, the pricing page carries no ZDR note for this row — the artifact
   // is the evidence, and the sibling `deepseek-v4.1-flash` stays ZDR-covered.
   'deepseek/deepseek-v4.1-flash-fast',
-  'meta/muse-spark-1.1',
-  'meta/muse-spark-1.2',
-  'meta/muse-spark-1.2-contributor',
-  'meta/muse-spark-1.3',
-  'meta/muse-spark-1.3-contributor',
-  // command-code@1.80.0. The CLI's exclusion set names it, so a ZDR request for
-  // it is refused; the pricing page carries no ZDR note for this row, so the
-  // artifact is the evidence. 22 members as of 1.82.1 — Gemini 4 Argon, the
-  // only registry addition in the 1.81.0 -> 1.82.1 train, is NOT in the set.
-  'meta/muse-wonder-1.0',
   // 2026-10-16 (1.84.0 sync). LongCat's verdict followed the id, not the other
   // way round: the catalog now serves `zdr:false` for the paid
   // `meituan/LongCat-2.0` and `zdr:true` for the `:free` row that 1.82.4 had
@@ -433,13 +448,19 @@ export const KNOWN_NON_ZDR_MODELS: ReadonlySet<string> = new Set([
   // too — so this is a plain rename with a positive counter-example for the old
   // alias, never a removal on missing evidence.
   'meituan/LongCat-2.0',
+  // 2026-10-21 (command-code@1.86.1 sync). The two Contributor siblings are the
+  // only Muse rows still excluded: the catalog flipped 1.1 / 1.2 / 1.3 and
+  // Muse Wonder 1.0 to `zdr:true`, and the artifact dropped them too.
+  'meta/muse-spark-1.2-contributor',
+  'meta/muse-spark-1.3-contributor',
   'minimax/minimax-m3-free',
   'poolside/laguna-s-2.1-free',
   // 2026-10-16 (1.84.0 sync). Catalog-only evidence: `?view=client` serves
   // `zdr:false` for Reflection's free Beam preview while the 1.84.0 artifact's
-  // exclusion set never names it (that gap is the audit's single error). This
+  // exclusion set never names it (that gap was the audit's single error). This
   // snapshot is the UNION of both sources, so the catalog verdict alone admits
-  // it — the same path `stealth/cat-jam:free` took at 1.82.4.
+  // it — the same path `stealth/cat-jam:free` took at 1.82.4. At the 1.86.1
+  // sync the two sources agree on it.
   'reflection/beam:free',
   'sakana/fugu-ultra',
   // command-code@1.79.0. The free Glyph Cluster preview is the ONE entry here
@@ -448,23 +469,13 @@ export const KNOWN_NON_ZDR_MODELS: ReadonlySet<string> = new Set([
   // 100 requests a day. Not routed under ZDR." The CLI's own exclusion set
   // carries the same membership.
   'stealth/glyph-cluster:free',
-  // 2026-10-15. The live catalog served `zdr:false` for this free stealth
-  // preview and no anchor set named it at all, so it was excluded on the catalog
-  // verdict alone. Retired from both catalog views on 2026-10-20; kept here
-  // because the 1.84.0 artifact's exclusion set still names it and this table is
-  // the union — a stale session naming the id must still get a truthful answer.
-  // Its pricing tip read "Free while the stealth preview lasts"; unlike its
-  // Glyph Cluster sibling the page stated no ZDR note for that row.
-  'stealth/cat-jam:free',
   'stepfun/Step-3.7-Flash',
   'stepfun/Step-5-Preview',
-  'xai/grok-4.5',
-  'xai/grok-4.6',
-  'xiaomi/mimo-v2.6-flash',
-  'xiaomi/mimo-v2.6-pro',
+  // 2026-10-21 (command-code@1.86.1 sync). New to the exclusion set: the catalog
+  // serves `zdr:false` and the 1.86.1 artifact agrees.
+  'tencent/hy4-preview',
   'xiaomi/mimo-v2.6-pro-ultraspeed',
   'z-ai/glm-5.3-flashx',
-  'zai-org/GLM-5.2-Fast',
 ])
 
 /**
@@ -518,6 +529,13 @@ export const KNOWN_THINKING_MODELS: ReadonlySet<string> = new Set([
   // `reasoning:!0` and no `reasoningEfforts`, one release after the backend
   // rename the 1.57.0 sync recorded here.
   'meituan/LongCat-2.0',
+  // 2026-10-21 (command-code@1.86.1 sync): Ornith 1.5 122B carries
+  // `reasoning: true` with no `reasoningEfforts` in the artifact registry and in
+  // the live catalog, so it thinks automatically and gets no selector. Both the
+  // free twin and the paid id behave the same way; the free row is only a
+  // dated promotion (`KNOWN_DEALS`), not a different capability.
+  'ornith/ornith-1.5-122b',
+  'ornith/ornith-1.5-122b:free',
 ])
 
 /**
@@ -692,15 +710,17 @@ export const MODEL_OUTPUT_TOKEN_LIMITS: ReadonlyMap<string, number> = new Map([
   // meta
   ['meta/muse-wonder-1.0', 131072],
   // minimax
-  ['minimax/minimax-m3.1-flash', 512000],
+  ['minimax/minimax-m3.1-flash', 524288],
   // minimax
-  ['minimax/minimax-m3.1-flash:free', 512000],
+  ['minimax/minimax-m3.1-flash:free', 524288],
   // minimax
   ['MiniMaxAI/MiniMax-M2.5', 131072],
   // minimax
   ['MiniMaxAI/MiniMax-M2.7', 131072],
   // minimax
-  ['MiniMaxAI/MiniMax-M3', 512000],
+  ['MiniMaxAI/MiniMax-M3', 524288],
+  // 8 provider(s), unanimous
+  ['mistral/mistral-large-4', 262144],
   // moonshotai
   ['moonshotai/Kimi-K2.6', 262144],
   // moonshotai
@@ -795,8 +815,8 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * `/docs/plans/max` and `/docs/resources/pricing-limits`). Each plan's model
  * list is a superset of the one below it: Go ⊂ GOAT ⊂ Pro ⊂ Provider/Max.
  * Models absent from every plan list (Claude Opus/Fable, Fugu Ultra) are
- * Provider-tier. Re-verified at command-code@1.82.4 (2026-10-16) against the
- * live `?view=client` catalog: 93 ids, still a strict superset chain. Mistral
+ * Provider-tier. Re-verified at command-code@1.86.1 (2026-10-21) against the
+ * live `?view=client` catalog: 104 ids, still a strict superset chain. Mistral
  * Large 4
  * (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair
  * added Claude Haiku 5.5 at Pro and the free Glyph Cluster preview at Go.
@@ -805,11 +825,12 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * train adds Qwen 3.8 Max Prime at GOAT plus Muse Spark Open, Nemotron 3.5
  * Super VL and the free Cat Jam preview at Go, and drops Ling 3.0 Flash Sante,
  * which left the live catalog. Every other
- * tier is unchanged.
+ * tier is unchanged. The 1.86.1 sync (2026-10-21) adds only the Ornith 1.5 122B
+ * launch pair at Go.
  * The only removals since 1.49.0 are the two retired stealth previews (Pixel
- * Canary at 1.73.1, Space Bunny Alpha at 1.74.3) and Ling 3.0 Flash Sante
- * (2026-10-16). Per-entry tags below name the
- * releases that added or moved each row.
+ * Canary at 1.73.1, Space Bunny Alpha at 1.74.3), Ling 3.0 Flash Sante
+ * (2026-10-16) and the retired Cat Jam preview (2026-10-20). Per-entry tags
+ * below name the releases that added or moved each row.
  *
  * The Provider API exposes no plan metadata, so this snapshot is the source of
  * truth for the picker's plan annotation — it answers "which plan do I need to
@@ -820,7 +841,7 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * dsh-commandcode-upstream skill).
  */
 export const KNOWN_PLANS: Readonly<Record<string, string>> = {
-  // --- Go (54 paid + 4 free) ---
+  // --- Go (56 paid + 4 free) ---
   'MiniMaxAI/MiniMax-M2.5': 'go',
   'MiniMaxAI/MiniMax-M2.7': 'go',
   'MiniMaxAI/MiniMax-M3': 'go',
@@ -892,13 +913,21 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   // 2026-10-14; individual-go true, the "all":true shape shared by the rest of
   // the open-weight Nemotron family.
   'nvidia/nemotron-3.5-super-vl': 'go',
+  // 2026-10-21 (command-code@1.86.1 sync): Ornith 1.5 122B is a Go-tier
+  // open-weight MoE — `minimumPlan: "individual-go"` in the live catalog and
+  // every tier true in the pricing page's embedded availability. The free twin
+  // is a dated launch promo (see `KNOWN_DEALS`), not a plan difference.
+  'ornith/ornith-1.5-122b': 'go',
+  'ornith/ornith-1.5-122b:free': 'go',
   'poolside/laguna-s-2.1-free': 'go',
   // 2026-10-16, first seen at the 1.84.0 sync: the free Beam preview was the one
   // new id the DEFAULT catalog view served then (93 ids). This map tracks that
   // view: the eight `hidden:true` rows of `?view=client` do not belong here,
-  // unlike `KNOWN_NON_ZDR_MODELS`, which carries their union (see the decision
-  // record, chapter 7). The 2026-10-20 catalog-only sync takes the view to 94
-  // ids — the MiniMax M3.1 Flash pair joined and `stealth/cat-jam:free` left.
+  // unlike `KNOWN_NON_ZDR_MODELS`, whose membership is the catalog/artifact
+  // union (see the decision record, chapter 7). The 2026-10-20 catalog-only sync
+  // took the view to 94 ids — the MiniMax M3.1 Flash pair joined and
+  // `stealth/cat-jam:free` left — and the 1.86.1 sync takes it to 96 with the
+  // Ornith 1.5 122B pair.
   'reflection/beam:free': 'go',
   'stepfun/Step-3.5-Flash': 'go',
   'stepfun/Step-3.7-Flash': 'go',
@@ -907,9 +936,9 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   'stepfun/Step-5-Preview': 'go',
   // `stealth/cat-jam:free` left this map on 2026-10-20 with the rest of the
   // model tables: both catalog views, the pricing page and the models docs page
-  // stopped serving it. The 1.84.0 artifact still names it in its ZDR exclusion
-  // set, which is why `KNOWN_NON_ZDR_MODELS` keeps it (see the decision record,
-  // chapter 7 item 13).
+  // stopped serving it. The 1.86.1 artifact dropped it from its ZDR exclusion
+  // set as well, so `KNOWN_NON_ZDR_MODELS` no longer carries it either (see the
+  // decision record, chapter 7 item 13).
   // command-code@1.79.0 ("Add Glyph Cluster as a free model, 100 requests a
   // day"); the pricing page's embedded availability grants every tier
   // (individual-go through teams-pro) — the "all":true shape shared by the Ling
@@ -1172,14 +1201,16 @@ export const KNOWN_DEALS: Readonly<Record<string, KnownDeal>> = {
   // 2026-10-20 (catalog-only sync). The MiniMax M3.1 Flash free twin is a DATED
   // launch promo, unlike the open-ended "while capacity lasts" previews below:
   // the pricing page publishes deal `minimax-m3-1-flash-free` at 100% off from
-  // 2026-10-19T11:00Z through 2026-10-21T10:45Z (Beijing 10-19 19:00 → 10-21
-  // 18:45) and says "Free for a limited time. No daily request limit." Carrying
-  // `expiresAt` makes the FREE badge lapse on its own via `dealLabel()`; the
-  // `:free` id keeps pricing at zero through the price table's id-suffix rule.
+  // 2026-10-19T11:00Z through 2026-10-22T10:45Z (Beijing 10-19 19:00 → 10-22
+  // 18:45; the 2026-10-21 check found the end date moved one day out from the
+  // `10-21T10:45Z` the first sync recorded) and says "Free for a limited time.
+  // No daily request limit." Carrying `expiresAt` makes the FREE badge lapse on
+  // its own via `dealLabel()`; the `:free` id keeps pricing at zero through the
+  // price table's id-suffix rule.
   'minimax/minimax-m3.1-flash:free': {
     label: 'FREE',
     free: true,
-    expiresAt: '2026-10-21T10:45:00Z',
+    expiresAt: '2026-10-22T10:45:00Z',
   },
   'xiaomi/mimo-v2.5-pro': { label: '99% off' },
   'xiaomi/mimo-v2.5': { label: '98% off' },
@@ -1216,6 +1247,16 @@ export const KNOWN_DEALS: Readonly<Record<string, KnownDeal>> = {
   // price table either. Unlike those free models it is NOT ZDR-routed — the
   // page's own tip says so outright (see `KNOWN_NON_ZDR_MODELS`).
   'stealth/glyph-cluster:free': { label: 'FREE', free: true },
+  // 2026-10-21 (command-code@1.86.1 sync). Ornith 1.5 122B's free twin is a
+  // DATED launch promo like MiniMax M3.1 Flash's: the pricing page publishes
+  // deal `ornith-1-5-122b-free` at 100% off "until 11:00 PM PT on October 21"
+  // (`expires: 2026-10-22T06:00Z`, Beijing 10-22 14:00), no daily request limit.
+  // The paid id is listed at $0.16/$0.64/$0.02 and carries no deal.
+  'ornith/ornith-1.5-122b:free': {
+    label: 'FREE',
+    free: true,
+    expiresAt: '2026-10-22T06:00:00Z',
+  },
   // `stealth/space-bunny-alpha` (command-code@1.65.0, 100% off "Free while the
   // stealth preview lasts", auto-applied, no published end date) left this map
   // on 2026-10-06: command-code@1.74.3 hides the model, the catalog and the
