@@ -61,7 +61,7 @@ type CommandCodeProtocol = 'cli' | 'openai' | 'messages';
 declare const DEFAULT_MAX_OUTPUT_TOKENS = 131072;
 //#endregion
 //#region src/adapter.d.ts
-declare const COMMAND_CODE_CLI_VERSION = "1.86.3";
+declare const COMMAND_CODE_CLI_VERSION = "1.87.1";
 declare const DEFAULT_API_BASE = "https://api.commandcode.ai";
 /**
  * The output budget this bundle asks for, and the ceiling it will never exceed.
@@ -1165,7 +1165,7 @@ declare const KNOWN_THINKING_MODELS: ReadonlySet<string>;
  * `/docs/plans/max` and `/docs/resources/pricing-limits`). Each plan's model
  * list is a superset of the one below it: Go ⊂ GOAT ⊂ Pro ⊂ Provider/Max.
  * Models absent from every plan list (Claude Opus/Fable, Fugu Ultra) are
- * Provider-tier. Re-verified at command-code@1.86.3 (2026-10-21) against the
+ * Provider-tier. Re-verified at command-code@1.87.1 (2026-10-22) against the
  * live `?view=client` catalog: 104 ids, still a strict superset chain. Mistral
  * Large 4
  * (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair
@@ -1176,7 +1176,8 @@ declare const KNOWN_THINKING_MODELS: ReadonlySet<string>;
  * Super VL and the free Cat Jam preview at Go, and drops Ling 3.0 Flash Sante,
  * which left the live catalog. Every other
  * tier is unchanged. The 1.86.1 sync (2026-10-21) adds only the Ornith 1.5 122B
- * launch pair at Go.
+ * launch pair at Go; the 1.87.1 check (2026-10-22) adds no model and moves no
+ * tier.
  * The only removals since 1.49.0 are the two retired stealth previews (Pixel
  * Canary at 1.73.1, Space Bunny Alpha at 1.74.3), Ling 3.0 Flash Sante
  * (2026-10-16) and the retired Cat Jam preview (2026-10-20). Per-entry tags

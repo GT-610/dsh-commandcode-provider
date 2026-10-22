@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-10-22
+
+### Changed
+
+- **同步 Command Code CLI `1.86.3` → `1.87.1`（纯请求头同步）。** `1.87.0`（10-21T18:02Z）与 `1.87.1`（10-21T23:26Z）先后发布，官方变更日志页面的 CLI 条目仍停在 `1.84.0`（`1.85.0`–`1.87.1` 全部没有条目），因此结论来自产物级静态比对：端点集合（64 个）、自定义请求头（5 个，均 `x-` 前缀）、`/alpha/generate` 调用点、模型注册表、efforts（推理档位）、订阅表与 ZDR（零数据保留）例外集逐项相同（首轮审计 `cliDiff` 四类全空）；新增内容全属 CLI 自身——`/btw` 回合中旁问、磁盘写满保护、权限模式由 `standard` 改名 `default` 并新增 `dont-ask`，插件不经过这些路径。`COMMAND_CODE_CLI_VERSION` 只随请求头更新，运行时行为不变。**证据边界**：公开 GET 采集 14 个源全部 HTTP 200；审计 `incomplete` 的 4 条 error 仍是 MiniMax M3.1 Flash 与 Ornith 四个 id 缺定价映射别名（目录侧单源，与上一轮同因）；未做真实账号登录、付费生成、浏览器渲染与服务端协议验证。
+
+- **官方定价页两行月度额度下调，同步到内置价格表。** `deepseek-v4.1-flash` 的 GOAT 额度 `$100` → `$80`、Pro `$110` → `$90`（Go `$10` 不变）；`mistral-large-4` 的 Go `$10` → `$6`、GOAT `$40` → `$20`、Pro `$50` → `$30`。逐 token 费率、促销与峰值时段均未变（价格表仍 94 行），由 `node scripts/sync-model-prices.mjs` 生成。
+
+- **输出上限表新增 `thinkingmachines/inkling-small`（65,536）。** 该模型此前已在 `KNOWN_PLANS`／`KNOWN_THINKING_MODELS` 中，只是 models.dev 聚合目录这次才补上供应商行，由 `node scripts/sync-output-limits.mjs` 写入（81 → 82 行）。
+
+- **服务端目录版本变化不涉及能力快照。** `catalogVersion` 由 `2a2c334e…` 变为 `501a4bf9…`，默认视图仍 96 个 id、`?view=client` 仍 104 个，`reasoningEfforts`／`zdr`／`inputModalities`／`minimumPlan`／`pricing` 与上一轮逐项一致，故 `src/capabilities.ts` 的能力表未改。两个免费促销按快照里已有的 `expiresAt` 自然失效（`ornith/ornith-1.5-122b:free` 2026-10-22T06:00Z、`minimax/minimax-m3.1-flash:free` 2026-10-22T10:45Z），无需改代码。
+
+### Verification
+
+- `npm run typecheck` 退出码 0；`npm test` **1111／1111** 通过；`npm run build` 两段 `Build complete`，`lib/index.js` 与 `lib/index.d.ts` 已重建（含 `1.87.1`、两行 allowance、inkling-small 上限）。`node scripts/sync-model-prices.mjs --check` 与 `node scripts/sync-output-limits.mjs --check` 均回到 `up to date`（退出码 0）。
+
 ## [0.15.0] - 2026-10-21
 
 ### Added

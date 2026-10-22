@@ -27,6 +27,20 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   are identical, the live catalog still serves 96 / 104 ids with `catalogVersion` `2a2c334e…`, and the only
   artifact additions are CLI-local (`distrustCompromisedRoots` and the experimental taste/learn UI).
 
+  **Follow-up check (2026-10-22, CLI 1.86.3 → 1.87.1):** npm `latest` reached `1.87.0`
+  (10-21T18:02Z) and `1.87.1` (10-21T23:26Z); both are silent upstream (the changelog's newest CLI
+  entry is still `1.84.0`), so the conclusion is artifact-level again: endpoints (64), custom headers
+  (5), the `/alpha/generate` call sites, the registry, effort map, subscription tables and ZDR
+  exception set are identical, and every addition is CLI-local (`/btw` mid-turn side questions,
+  disk-full write protection, and the permission-mode rename `standard` → `default` plus a new
+  `dont-ask`). The live catalog moved `catalogVersion` from `2a2c334e…` to `501a4bf9…` while still
+  serving 96 / 104 ids, and every capability field is unchanged, so no model table here moved (plans
+  96, efforts 66, image 74, thinking 17, deals 8, ZDR 18). Two data tables did move: vendored price
+  rows stay 94 but two monthly allowances drop (`deepseek-v4.1-flash` GOAT $100 → $80 / Pro $110 →
+  $90; `mistral-large-4` $10/$40/$50 → $6/$20/$30), and the output-limit table gains one row
+  (`thinkingmachines/inkling-small` 65,536; 81 → 82). The four pricing-alias `incomplete` errors are
+  the same known MiniMax M3.1 Flash / Ornith pair as the previous two rounds.
+
   - `KNOWN_EFFORTS` — model → selectable reasoning-effort levels. Authoritative source is the live
     `?view=client` catalog's `reasoningEfforts` (since command-code@1.82.4 the CLI no longer keeps this map
     bundled — `getSupportedEfforts()` resolves it through the catalog, whose embedded bootstrap snapshot
