@@ -70,7 +70,11 @@ export const PAGE_CSS = `
 .cc-rows{flex-direction:column;display:flex}
 .cc-row{flex-wrap:wrap;align-items:center;gap:8px 24px;display:flex;padding:12px 0}
 .cc-rowFlush{padding:0}
-.cc-rowText{flex-direction:column;flex:1 1 300px;gap:2px;min-width:0;display:flex}
+/* The text column starts at 200px (not 300px) so the widest controls — the
+ * 280px API base input, the allowlist's button + 200px selector — still sit
+ * beside their label in a ~560px settings panel; the description wraps more
+ * lines instead of the control dropping to a second line. */
+.cc-rowText{flex-direction:column;flex:1 1 200px;gap:2px;min-width:0;display:flex}
 .cc-rowTitleLine{align-items:center;gap:8px;display:flex;min-width:0}
 .cc-rowTitle{min-width:0;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}
 .cc-rowDesc{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
@@ -96,9 +100,14 @@ export const PAGE_CSS = `
 .cc-unitBox:has(>.cc-fieldInput:disabled){opacity:.5}
 .cc-unitBox>.cc-fieldInput{flex:1;width:auto;height:30px;border:0;border-radius:0;background:0 0;outline:none;text-align:right;font-variant-numeric:tabular-nums}
 .cc-unit{flex:none;padding:0 10px 0 2px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;white-space:nowrap}
-/* Holds the reset button's column on rows that have nothing to reset, so the
- * staged controls of one group line up on a single right edge. */
-.cc-resetSlot{flex:none;width:28px;height:28px}
+/* A customized field's marker on its title line: the badge, then a 20px
+ * round reset button. Reset lives here rather than after the control, so no
+ * row reserves a reset column and the page keeps one right edge. */
+.cc-overrideTag{align-items:center;gap:4px;display:inline-flex}
+.cc-resetInline{flex:none;align-items:center;justify-content:center;display:inline-flex;width:20px;height:20px;padding:0;border:0;border-radius:999px;corner-shape:round;background:0 0;color:var(--dsw-alias-label-tertiary);cursor:pointer}
+.cc-resetInline:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.cc-resetInline:disabled{cursor:default;opacity:.4}
+.cc-resetInline:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .cc-icon{flex:none;width:16px;height:16px}
 /* The page's buttons (PageButton), drawn to the design canvas: one capsule
  * shape, md 32px / 14px text / 14px icon, sm 28px / 12px text, lg 36px for
@@ -320,6 +329,11 @@ export const PAGE_CSS = `
 .cc-statusValue{flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0;display:flex}
 .cc-statusVerdict{color:var(--dsw-alias-label-primary)}
 .cc-statusMeta{flex:1 1 200px;min-width:0}
+/* One aggregate (uptime, response, age) never breaks inside itself; a line
+ * that runs out of room moves the whole next segment down. */
+.cc-statusPart{white-space:nowrap}
+/* On the title line, flush with the page's single right edge. */
+.cc-statusTitleLink{align-items:center;gap:4px;display:inline-flex;margin-left:auto}
 .cc-statusBad{color:var(--dsw-alias-state-warn-label,var(--dsw-alias-state-warn-primary,#b45309))}
 .cc-statusLink{color:var(--dsw-alias-link,var(--dsw-alias-brand-primary));text-decoration:none;font-size:12px;line-height:18px;white-space:nowrap}
 .cc-statusLink:hover{text-decoration:underline;text-underline-position:under}

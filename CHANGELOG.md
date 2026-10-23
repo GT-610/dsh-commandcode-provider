@@ -19,6 +19,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - 面板自动刷新在文档隐藏时跳过读取但照旧重排定时器，重新可见立即补读一次；首屏仍无条件读取。可见性做成可注入接缝（`AutoRefreshVisibility`），非浏览器环境视为始终可见。
 
   用例：`tests/adapter.test.ts` 新增「凭据解析与图片读取并行」「目录已在内存时不再等一次联网刷新」「超时定级复用已序列化的正文」「同一份工具 schema 只归一化一次」「用量卡片与选择器共享同一份账户事实」；`tests/panel.test.ts` 与 `tests/usage-client.test.ts` 新增自动/显式刷新与可见性用例。上述新增用例在对应实现回退时均失败。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1120／1120** 通过；`npm run build` 重建 `lib/` 后无差异（说明提交的 bundle 与源码一致）。未在真实宿主中人工验证。（此前一次本机运行的 16 条 `tests/web-search.test.ts` 失败源于 `node_modules` 与 lockfile 漂移——实装 `@deepseek-ai/dsh-web` `0.2.1-alpha.3` 而 lockfile 钉 `0.2.1-rc.2`，按 lockfile 重装即消失，与本批改动无关。）
+## [0.15.2] - 2026-10-23
+
+### Changed
+
+- **「模型白名单」说明精简成一句**：「只列出勾选的模型，都不勾选＝显示全部。网页与终端共用。」（27 字，合并回单键 `visibleModelsHint`）。纯呈现层，白名单的暂存、校验与提交路径不动。
+- **设置页尺寸回到设计画布**（用户反馈「整体大小好像被改掉了，没有那么协调了」）：撤回同批早先加的两类调整——① 分组头、账户卡片列表、「添加账户」操作行的 `padding-right:36px` 右内缩，卡片与分组头恢复满宽；② API 地址行与模型白名单行的 `cc-rowFluid`（不折行、API 地址输入框拉伸到约 380–600px），API 地址输入框回到 280px，两行恢复普通行。
+
+- **同步 Command Code CLI `1.87.1` → `1.87.3`，并清理四个已下线模型（纯请求头 + 快照清理）。** `1.87.2`（10-22T20:43Z）四条修复、`1.87.3`（10-22T21:30Z）两条新功能，两条都有官方变更条目——`cmd acp` 可加载 mod 选项、无效推理档位不再让所有请求失败、进程名不再每 5 秒重设、流中途失败显示供应商真实错误；`--permission-mode` 接受 Claude Code 的权限模式别名、更新 BYOK 包——全部属 CLI 自身行为，插件不经过这些路径。产物级比对：端点集合（64 个）、自定义请求头（5 个）、`/alpha/generate` 调用点、`promptCache` 与 `reasoning_effort` 字面量、模型注册表、efforts（推理档位）、订阅表与 ZDR（零数据保留）例外集逐项相同（审计 `cliDiff` 四类全空），故 `COMMAND_CODE_CLI_VERSION` 只随请求头更新。服务端目录 `catalogVersion` 由 `501a4bf9…` 变为 `02bfc7ac…`，默认视图 96 → 92 而 `?view=client` 仍 104：两个限时免费促销到期（`ornith/ornith-1.5-122b:free` `2026-10-22T06:00Z`、`minimax/minimax-m3.1-flash:free` `2026-10-22T10:45Z`），MiMo V2.5 两款下架（`xiaomi/mimo-v2.5`、`xiaomi/mimo-v2.5-pro`——V2.6 以原促销价作为常规价，属同价换代而非临时隐藏）。官方 models / pricing 页与 go / goat / pro / max 计划页同步删除这些行与小米合作区块，ZDR 页与 What's New 无变化。快照随之清理：`KNOWN_PLANS` 96 → 92、`KNOWN_EFFORTS` 66 → 65、`KNOWN_IMAGE_MODELS` 74 → 71、`KNOWN_THINKING_MODELS` 17 → 16、`KNOWN_DEALS` 8 → 4、内置价格行 94 → 92、输出上限行 82 → 79，ZDR 例外集 18 不变；其余 88 个模型的价格、上下文、计划档位与输入模态零变化。**证据边界**：公开 GET 采集 14 个源全部 HTTP 200；审计 `incomplete` 的 2 条 error 是 MiniMax M3.1 Flash 与 Ornith 缺定价别名（上一轮 4 条，随两个 `:free` 行下线减为 2 条），非抓取失败；未做真实账号登录、付费生成、浏览器渲染与服务端协议验证。
+
+### Fixed
+
+- **设置页右侧只剩一条边界**（用户反馈「右侧没有设计图好看」）：此前每行控件后都留 28px「恢复默认」空位，控件比账户卡片、分组头「刷新」、「查看模型用量」那一行多缩进 36px，形成两条右边界。现在「恢复默认」改为标题行「已自定义」徽标后的 20px 圆形图标按钮（只在字段被改过时出现），行末不再留空位，控件、卡片、分组头动作全部贴内容右缘；`FieldOverride` 组件与 `cc-resetSlot` 样式删除。
+
+- **窄设置面板下宽控件不再折到第二行**（用户截图：约 560px 内容区里，模型白名单的「显示全部」+ 下拉框、API 地址输入框都掉到第二行右侧）：设置行文字列下限从 300px 降到 200px，控件保持设计稿尺寸（输入框 280px、下拉 200px）并始终与标题同行，代价是窄面板下说明文字多折一两行；门槛由约 640px 降到约 540px。
+- **服务状态行不再从中间断开「13 小时前更新」**：「打开状态页」链接移到「服务状态」标题行右侧（带外链图标），两行状态获得整行宽度；官方行的可用率、平均响应、更新时间各为不可断开的一段（视图字段 `detail` 改为 `detailParts`），放不下时整段换到下一行，换行后的行首不会是「·」。
+
+### Verification
+
+- `npm run typecheck` 通过；`npm test` **1111／1111** 通过；`npm run build` 完成，`lib/client.js` 已不含 `cc-rowFluid` 与 `padding-right:36px`。**未做**：在运行中的 dsh web 宿主内实测（宿主重启后需新的带令牌地址）。
+- 上游同步同批：`npm run typecheck` 退出码 0、`npm test` **1111／1111**、`npm run build` 两段 `Build complete`（`lib/` 已重建，含 `1.87.3`、不含 `xiaomi/mimo-v2.5`）；`node scripts/sync-model-prices.mjs --check` 报 `up to date (92 rows)`、`node scripts/sync-output-limits.mjs --check` 报 `table already up to date`，退出码均 0。
 
 ## [0.15.1] - 2026-10-22
 

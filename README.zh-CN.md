@@ -14,304 +14,32 @@
 
 > 这是一个社区集成。你需要自己的 Command Code 账号、API key 或订阅，并遵守 Command Code 的服务条款。本项目与 Command Code, Inc. 无关。
 
+## 快速上手
+
+| | |
+|---|---|
+| 已验证引擎 | dsh `0.2.0-rc.2`（npm `latest`）· dsh `0.2.1-rc.2`（npm `next`） |
+| 安装 —— 网页端 | `dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@latest` |
+| 安装 —— 终端端 | `dsh plugin --profile dsh-tui add @mars-sea/dsh-commandcode-provider@latest` |
+| 配置文件 | `$DSH_HOME/settings.yaml` → `llm-commandcode:` |
+| API key 环境变量 | `COMMANDCODE_API_KEY` |
+| 用量面板 | `/commandcode` |
+
 ## 功能一览
 
-- **插件包**：一条 `dsh plugin add` 命令安装到任意 dsh 配置，注册 `commandcode` provider 路由，带实时模型目录。
-- **专属设置页**：统一的账户列表（密钥、网页登录、实时额度、专用模型）、模型显示、隐私开关与连接参数。
-- **服务状态**：设置页「集成与显示」顶部显示官方状态页的公开记录（服务是否正常、7 天 / 30 天可用率、近 7 天平均响应），并注明官方数据的更新时间——官方只在状态变化或每日汇总时发布，因此不再把时间写成「最后检测」。同时由宿主对当前 API 地址做一次实时连通探测，分成「官方」与「本机」两行展示，真正回答「现在能不能连上」；本机连不上时，分组标题直接提示「本机无法连接」。数据缓存在本地，获取失败时明确标注「上次结果」且不阻塞保存。
-- **模型分析**：从设置页打开，按最近会话或日期查看历史词元、估算成本、响应速度与失败/重试，比较固定工作量在其他可见模型上的价格和客观能力。包含已关闭会话、去除分支继承用量，显示缺失数据和读取覆盖；完整时间范围可折算 30 天成本。不自动推荐、不评价任务质量。金额按当前价重算，不是账单；[统计口径与限制](docs/模型成本与性能分析.md)。
-- **终端界面同样可用**：同一次安装即可服务 [dsh-TUI](#终端界面dsh-tui) 配置，终端里有自己的 **`/settings` → Command Code** 页面来填 key 和调模型。
-- **Models 页快捷卡片**：**设置 → Models → Command Code** 卡片内直接显示 key 状态、粘贴输入框和登录按钮。
-- **浏览器内登录获取 key**：设置页一键发起官方授权（与 `cmd login` 同一流程），完成后密钥自动写入本机凭据服务，无需手动创建或粘贴；不可用时随时退回手动粘贴。
-- **多账户轮换**：一个账户用量打满后，请求自动切换到下一个账户。详见[多账户轮换](#多账户轮换)。
-- **key 配置灵活**：设置页填写、环境变量或官方 CLI 登录文件均可。
-- **模型选择器标注**：每个模型标注最低套餐、折扣/FREE 徽章、峰谷时段、图片支持与上下文长度，免费模型置顶。
-- **自定义上下文长度**：覆盖宿主用于上下文计量与自动压缩的上下文窗口——一个全局值加按模型覆盖，可在设置页或配置中设置（issue #86），不填则跟随模型目录。
-- **按套餐过滤**：默认隐藏超出订阅套餐的模型，可一键关闭；「模型白名单」可进一步只保留常用模型。
-- **推理强度支持**：支持推理强度的模型可在选择器中选择档位。
-- **图片输入**：Vision 模型支持发送图片。
-- **套餐与配额面板**：可选的 Command Code 卡片位于侧边栏底部（Settings 正上方），显示当前服务账号的套餐与 5 小时 / 每周两个配额窗口；点击后在中间栏打开面板，包含计费周期、两个窗口的进度条与重置时间、月度额度消耗，以及已购买 / 赠送余额。面板右上角的 **×** 按钮可随时把中间栏交还给会话（不会切换当前会话）。**默认关闭**——在 **设置 → Command Code → 集成与显示** 中打开「在侧边栏显示额度卡片」即可显示，同一开关也能随时隐藏（隐藏时左侧不渲染任何内容，也不会为其后台刷新用量）。面板文案跟随 Harness 显示语言（中文 / English）。
-- **会话费用估算**：在输入框下方的 token 计数旁及用量对话框中显示估算金额（`≈`），根据持久化历史中每次请求的模型、请求时间和上下文阶梯分别计价。切换模型或稍后查看不会重新定价之前的请求。混合供应商或缺少费率时显示已定价部分的小计（`≥`）；缺少历史事实或完全无法定价时不显示金额。会话内的自动／手动 compaction（上下文压缩）会额外发一次模型请求，其用量记在 `compaction/summary` 事件上，现在同样计入 Command Code 成本（历史模型分析一并计入）；其他 provider 写的摘要仍不计价。结果基于插件内的价格快照，不等同于供应商账单。同样固定为英文。
-- **联网搜索**：dsh 的 `web_search` 工具由 Command Code Provider API（`/alpha/web-search`）承载，复用聊天同一个 key 与端点，无需单独配置搜索 key 或地址。详见[联网搜索](#联网搜索)。
-
-## 安装
-
-本版本支持 **dsh 0.2.0-rc.2 与 0.2.1-rc.2 两个已验证引擎**，两者都在 RC（候选发布版）通道上。`0.2.0-rc.2` 至今仍是 npm `latest` 指向的版本（2026-10-18 复核），也就是官方默认安装会跑的那一版；`0.2.1-rc.2` 挂在 `next` 标签上。peer（对等依赖）范围与兼容记录把两者都写成精确版本；alpha（早期测试版）通道不保留——自 `0.2.1-alpha.5` 之后没有新的已验证版本。`@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 写成按引擎配对的析取式 `~4.0.4 || ~4.0.5`／`~3.18.4 || ~3.18.5`——两代引擎的配对不同（`0.2.0-rc.2` 需要 cordis `~4.0.4` 与 schemastery `~3.18.4`，`0.2.1-rc.2` 随 `4.0.5`／`3.18.5` 发布），单分支覆盖不了两代。注意 **dsh 0.2.1-rc.2 判定插件兼容性时只读 `engines.dsh`**，dsh 对等依赖范围仅在该字段缺失时才被参考，因此 `engines.dsh` 声明错误会被它直接拒绝；而在 `0.2.0-rc.2` 上起作用的正是对等依赖范围。使用 `0.2.1-alpha.5` 或更早版本的配置需先升级引擎，再安装本构建：
-
-```sh
-dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@latest
-```
-
-- **更早的 dsh 版本。** 0.1.2–0.1.7 线已不再支持：那些引擎早于 0.1.7 的设置重写、`RequestMessage` 消息封装和持久化图片卸载契约，用来桥接两代引擎的兼容代码已经删除。覆盖 0.1.7 的最后一个插件版本是 0.11.17；0.1.2–0.1.6 线的最后一个版本是 0.11.11；0.5.0 时代 Harness 线的最后一个版本是 0.9.1。三者都按精确版本安装，且都不再维护：
-
-  ```sh
-  dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@0.11.17   # dsh 0.1.7
-  dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@0.11.11   # dsh 0.1.2–0.1.6
-  dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@0.9.1     # dsh 0.5.0 线
-  ```
-
-**pnpm 11 会拦下刚发布的新版本。** 它的 `minimumReleaseAge` 默认为 1440 分钟，发布不足一天的版本会被跳过，`@latest` 解析到**上一个**版本 —— 而且是静默的，命令照样以成功退出。想装 24 小时内发布的版本，必须写精确版本号：
-
-```sh
-dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@0.11.15
-```
-
-这一点对每个 profile 都成立，包括下面的终端界面。
-
-插件可直接在 pnpm 10 的全新插件市场 generation 中安装。所有 Harness 包都由插件声明为 Host peer，由当前 dsh profile 统一管理，不要另行添加 dependency。其中 `@deepseek-ai/dsh-*` 全部声明同一个精确版本析取式 `0.2.0-rc.2 || 0.2.1-rc.2`；`@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 则写成按引擎配对的析取式 `~4.0.4 || ~4.0.5` 与 `~3.18.4 || ~3.18.5`——上游每次发引擎都会把这两个包重写成随引擎发布的版本，而两个保留引擎发布时的配对不同，单分支覆盖不了两代。上游曾在 `0.2.1-alpha.1` 删除 `@deepseek-ai/dsh-invariants` 这个包，因此插件不再声明它。
-
-## 更新
-
-用与安装时相同的 tag 更新：
-
-```sh
-dsh plugin --profile web update @mars-sea/dsh-commandcode-provider@latest     # dsh 0.2.0-rc.2 / 0.2.1-rc.2
-dsh plugin --profile web update @mars-sea/dsh-commandcode-provider@0.9.1      # 更早的 dsh（0.5.0 线，不再维护）
-```
-
-每个 profile 各自更新 —— 终端界面有独立的插件列表（见下文）：
-
-```sh
-dsh plugin --profile dsh-tui update @mars-sea/dsh-commandcode-provider@0.11.15
-```
-
-要更新到发布不足 24 小时的版本，和上面的安装一样写精确版本号；pnpm 11 的年龄门禁会把 `@latest` 解析成上一个版本。
-
-然后重启 Web 应用。
-
-## 获取 API key
-
-最简单的途径是官方 CLI（Node.js 22+）：
-
-```sh
-npm i -g command-code@latest
-cmd login        # macOS/Linux；Windows 原生版：cmdc login
-```
-
-也可以不装 CLI，直接在 **设置 → Command Code** 点击「登录 Command Code」：浏览器会打开 commandcode.ai 授权页（与 `cmd login` 相同的流程），完成后密钥自动写入本机凭据服务。还可以在 [Keys 设置页](https://commandcode.ai/mars-sea/settings/keys) 创建 key 后手动粘贴，或 `export COMMANDCODE_API_KEY="user_..."`。
-
-> 登录流程依赖 Host 与浏览器在同一台机器（回环回调）。Host 在远程机器上时请使用手动粘贴；若组合配置里写了字面量 `apiKey`，它仍优先于登录写入的凭据。
-
-## 验证是否生效
-
-重启后，在 **设置 → Command Code** 填入 API key 并保存；**设置 → Models** 出现 **Command Code** 卡片，模型选择器在 **commandcode** 下列出实时目录。选择套餐内包含的模型发送消息即可。
-
-## 终端界面（dsh-TUI）
-
-插件同样支持终端前端。**每个 dsh profile 有独立的插件列表**，所以上面那条 Web 安装命令不会装到终端里 —— 还要把插件装进 `dsh-tui` profile：
-
-```sh
-dsh plugin --profile dsh-tui add @mars-sea/dsh-commandcode-provider@0.11.15
-```
-
-这里请写精确版本号。新版本发布后的 24 小时内，只写包名（或 `@latest`）会被静默解析到上一个版本 —— 安装命令照样成功，但 profile 里拿到的是旧版本，结果就是全新的终端安装里既没有 **`/settings` → Command Code** 页面，也看不到任何 `commandcode` 模型。
-
-之后在模型选择器里选，或者直接指定：
-
-```text
-/model commandcode/deepseek/deepseek-v4.1-flash
-```
-
-`/model` 会列出所有已注册的 provider，Command Code 的实时目录连同套餐/优惠/上下文标注一起出现，`/commandcode` 用量面板在终端里同样可用。
-
-**填写 API key。** 终端没有网页版 Models 页面，所以插件会在终端设置页里声明自己的页面 —— **`/settings` → Command Code** —— 包含 API key、API 地址、隐藏套餐外模型、当前账号和命令语言。key 字段是只写的：它只显示"是否已配置"，输入的内容写进凭据库，不会写进任何 settings 文档。只用终端的用户只需要访问这一个页面。
-
-**选择模型。** 同一页面把整个模型目录列成勾选框，按套餐档位分组（Go → GOAT → Pro → Provider），免费模型排在最前，不需要手打任何模型 id。默认全部勾选——未设置白名单就等于"显示全部模型"；把不想在选择器里看到的取消勾选即可。选择会以「单模型覆盖」的形式保存在网页端编辑的 `visibleModels` 列表旁边，两个界面可以混用，手写的 `visibleModels` 也照常生效。
-
-也可以在终端外配置 key。凭据解析先命中者生效，顺序如下：
-
-- 组合配置里写死的字面量 `apiKey` 最优先，写了就一直用它。
-- 否则按凭据引用解析（`apiKeyEnv`，默认 `COMMANDCODE_API_KEY`）。在 **Web、桌面端、SDK、ACP 等挂载了凭据服务的 profile** 里由凭据服务统一解析：**0.2.1-alpha.3 起已保存的凭据优先于启动环境变量**，启动环境变量与 `.env` 是其后的回退；0.2.1-alpha.2 及更早的顺序相反，那时环境变量优先。
-- **headless（无头）profile 有意不挂载凭据服务**，因此只有启动环境变量、项目 `.env`、`$DSH_HOME/.env` 生效 —— **在页面上保存过的 key 不会到达 headless 运行**，请为这类运行导出变量或写 `.env`。
-- 最后兜底是官方 CLI 写入的 `~/.commandcode/auth.json`。
-
-```sh
-export COMMANDCODE_API_KEY="user_..."   # 启动环境变量
-cmd login                               # 写入 ~/.commandcode/auth.json
-```
-
-**把 Command Code 设为默认模型。** dsh-TUI 写死了自己的 agent 路由，它的 `agent-default-model` 设置不会覆盖它。要让每个会话默认走 Command Code，请在自己的 profile patch（`$DSH_HOME/profiles/dsh-tui/cordis.patch.yml`）里覆盖 `agent-loop` 行：
-
-```yaml
-- id: agent-loop
-  inject: [tuiStartup]
-  config:
-    agents:
-      - id: main
-        provider: commandcode
-        model: deepseek/deepseek-v4.1-flash
-        reasoningEffort: max
-        cwd: !!js process.cwd()
-```
-
-**引擎版本要求。** 插件维护**两个已验证引擎：dsh `0.2.0-rc.2` 与 dsh `0.2.1-rc.2`**。`@deepseek-ai/dsh-*` 的 peer（对等依赖）为精确版本析取式 `0.2.0-rc.2 || 0.2.1-rc.2`；`@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 使用按引擎配对的析取式 `~4.0.4 || ~4.0.5` 与 `~3.18.4 || ~3.18.5`——每个分支对应一代引擎的配对：`0.2.0-rc.2` 随 cordis `~4.0.4`／schemastery `~3.18.4` 发布，`0.2.1-rc.2` 随正式版 `4.0.5`／`3.18.5` 发布。兼容记录恰好包含这两个引擎——**两条都是 RC，不含 alpha 通道**，因为自 `0.2.1-alpha.5` 之后没有新的已验证版本。`0.2.0-rc.2` 虽然更旧，但被有意保留：它仍是 npm `latest` 解析到的版本，去掉它会让跑默认安装的宿主用 `engines.dsh` 准入直接拒绝本插件。每个分支仍必须是裸版本号，`0.2.0-rc.1`、`0.2.1-rc.1`、`0.3.0-alpha.1` 等未验证的邻近版本继续被拒。`npm run test:engine` 与 `npm run test:install` 对每个已声明引擎各跑一遍而不是只跑其中一个，前者还会用该引擎自己的 `evaluatePluginCompatibility` 对发布清单求值——自 alpha.4 起该判定只读 `engines.dsh`，因此引擎声明写错会在这一步失败，而不是拖到安装时才暴露。旧引擎安装说明见[安装](#安装)。
-
-## 用量面板
-
-插件注册了 `/commandcode` 斜杠命令，显示各账户的用量状态：
-
-```text
-/commandcode        （或 /commandcode status）
-```
-
-命令的文案跟随 shell 的语言设置：在 `llm-commandcode` 插件配置里显式写 `lang: 'en' | 'zh'` 优先；否则读 `LC_ALL`/`LANG`；再否则回退到 `zh`。web 设置页是独立表面，跟随浏览器自身的语言偏好。
-
-## 多账户轮换
-
-有多个 Command Code 订阅时，插件可以在一个账户达到用量限额后**自动切换到下一个账户**：
-
-- **配置**：在 **设置 → Command Code** 的「账户」卡片点击「添加账户」，可填写备注名，然后选择「网页登录」（在浏览器授权后自动保存 key；登录未完成不会留下空账户）或「粘贴密钥」。添加、重命名、更换或清除密钥、移除、固定等账户操作**立即生效**，无需点击页面底部的「保存」；「保存」只作用于页面上的其他设置。顶层 key 始终是第一顺位的 `default` 账户。
-- **手动切换**：在账户行的「⋯」菜单中选择「固定使用此账户」即可指定优先账户；所选账户耗尽时自动回落到其他账户，窗口重置后自动恢复。「取消固定」回到自动轮换。
-- **专用模型**：展开某个账户，从实时模型目录**多选**它的「专用模型」。请求这些模型且该账户可用时使用该账户；账户耗尽或密钥失效时自动回落到常规轮换。一个模型同一时间只属于一个账户，给另一个账户选择它会自动移过去（仍保存为 `modelAccountRules`）。
-- **只显示常用模型**：在「模型与上下文」卡片的「可见模型」中勾选要保留的模型，模型选择器只列出这些；不勾选则显示全部（默认行为不变）。
-- **状态展示**：每个账户行直接显示套餐、状态以及 5 小时 / 每周额度条，展开可查看完整报告；`/commandcode` 同样按账户显示状态。
-
-等价的 YAML（`$DSH_HOME/settings.yaml` 或组合配置）：
-
-```yaml
-llm-commandcode:
-  apiKeyEnv: COMMANDCODE_API_KEY        # 第一顺位（default）账户
-  activeAccount: COMMANDCODE_API_KEY_2   # 可选：手动指定当前账户（default 或某账户的凭据引用）
-  accounts:                              # 之后的轮换顺序
-    - label: Go #2
-      apiKeyEnv: COMMANDCODE_API_KEY_2
-    - label: Go #3
-      apiKeyEnv: COMMANDCODE_API_KEY_3
-  modelAccountRules:                     # 可选：按模型路由到账户（第一条命中生效）
-    - models:                            # 目录模型 id（可多选）
-        - deepseek/deepseek-v4-pro
-        - deepseek/deepseek-v4-flash-vision-exp
-      account: COMMANDCODE_API_KEY_2
-    - models:
-        - tencent/hy4-preview
-      account: default
-  visibleModels:                       # 可选：只在选择器中显示这些模型（目录模型 id），不填显示全部
-    - deepseek/deepseek-v4-pro
-    - tencent/hy4-preview
-```
-
-## 配置
-
-**设置 → Command Code** 分为：**账户**（密钥、网页登录、实时额度、固定账户、专用模型）、**模型与上下文**（默认折叠，点标题展开：隐藏套餐外模型、可见模型，以及紧随白名单之后的**自定义上下文长度**字段与**按模型覆盖**列表，全局与按模型，见下）、**隐私与安全**（零数据保留 ZDR，默认关闭，见下）、**集成与显示**（用 Command Code 承载联网搜索、在侧边栏显示额度卡片，默认关闭），以及默认折叠的**高级设置**（API 地址、请求/流超时、传输重试次数、历史图片缓存优化）。两个可折叠分组都点标题整行展开/收起，展开状态不跨刷新记忆。工作目录已不在页面上显示，配置中的 `workingDir` 仍然有效。
-
-同一组选项也位于 `$DSH_HOME/settings.yaml`（修改即刻生效，无需重启）：
-
-```yaml
-llm-commandcode:
-  apiKeyEnv: COMMANDCODE_API_KEY   # 凭据引用
-  apiBase: https://api.commandcode.ai
-  workingDir: /path/to/project     # 可选
-  modelsCachePath: ~/.commandcode/models-cache.json
-  requestTimeoutMs: 300000          # 默认 300s（与官方 CLI 一致）
-  streamIdleTimeoutMs: 300000      # 默认 300s
-  # offloadSeenImagesForCache: true # 可选：模型回复后不再重发旧图片，默认关闭
-  showSidebarQuota: true           # 可选：在侧边栏显示套餐与配额卡片（默认关闭）
-  zdr: true                        # 可选：请求只经由零数据保留上游（默认关闭）
-  # contextWindow: 131072          # 可选：自定义上下文长度（token），对所有模型生效；不填跟随目录
-  # contextWindowOverrides:        # 可选：按模型的自定义上下文长度；优先于 contextWindow
-  #   deepseek/deepseek-v4-pro: 65536
-  # maxOutputTokens: 65536         # 可选：单轮输出上限；0 = 不发送 max_tokens，留空跟随模型上限
-```
-
-### 自定义上下文长度
-
-宿主用于上下文计量、并据此触发自动压缩的上下文窗口，通常来自模型目录的 `context_length`。**设置 → Command Code → 模型与上下文**中、紧随可见模型白名单之后的**自定义上下文长度**输入框与**按模型覆盖**列表（或上面的两个配置项，issue #86）可以用你自己的数值替换它：`contextWindow` 是对所有没有单独条目的模型生效的全局值，`contextWindowOverrides` 按目录模型 id 单独设置、优先于全局值。不填则完全跟随目录，默认无任何变化。
-
-- **适用场景**：目录值偏大时，会话一长就会撞上真实的模型容量、请求以 `context_length_exceeded` 失败——填入更小的真实值，宿主会在服务端拒绝之前先压缩；目录值偏小时，长会话会比实际需要更早压缩——调大以匹配模型真实容量。
-- 模型选择器的上下文标注、`defaultMaxTokens` 默认预算与实际请求都跟随同一解析结果。调大窗口会解除旧目录窗口对输出的限制，但仍受模型独立输出上限、运行时学习上限和网关总上限约束；显式指定的输出数也受这些上限约束。会话费用的上下文分层计价仍按每次请求的实际 token 数。
-- 取值单位为 token，范围 1 – 10 000 000，必须为整数。网页阻止保存无效输入；配置文件中的非数值、小数或越界值由配置校验拒绝，不会静默回落。只有绕过配置校验的程序化调用会丢弃无效值，按「有效按模型值 → 有效全局值 → 目录」回落。目录没有的模型保持「无上下文宣告」的既有形状。
-- 输入框接受 `32K`、`1M` 这样的简写（二进制换算：`32K` = 32 768、`1M` = 1 048 576，131 072、262 144 这类 2 的幂窗口可直接写成 `128K`、`256K`；落盘仍是纯数字）。按模型覆盖的模型下拉只列出**模型白名单**中可见的模型（白名单为「显示全部」时即整个目录），行列表带「模型 / 上下文长度」列头。
-
-### 单轮输出上限
-
-插件每次请求都会带上 `max_tokens`，取值是「模型公布的输出上限、运行时学到的上限、网关总上限 131 072」三者取最小。这个字段是**被动硬限制**：到点就被平台切断，模型自己收不到「快到上限了」的信号。**设置 → Command Code → 模型与上下文**中的**单轮输出上限**（或配置项 `maxOutputTokens`）给了三个选择：
-
-- **留空（默认）**：完全沿用上面的推导，行为与之前一致。
-- **正整数**：与推导值取较小者。它只能**收紧**，永远不会突破模型上限或网关上限 `131072`；越界值由配置校验拒绝。输入接受 `64K` 这样的简写。
-- **`0`**：请求中**不发送** `max_tokens` 字段，把单轮输出规模交回平台自行限制——这是「长回答写到一半被切断」的解法，因为只要字段在，无论填多大都会在某个点被切。
-
-`0` 只在**接受缺省该字段**的两条传输上生效：CLI（`/alpha/generate`）与 OpenAI（`/provider/v1/chat/completions`）。Claude 走的 Anthropic Messages 端点**必填**该字段，缺了会被上游直接拒绝（`Invalid input: expected number, received undefined at max_tokens`），所以那条链路仍按推导值发送，填 `0` 对 Claude 无效。会话标题这类由宿主明确限定预算的辅助调用（会话标题固定 64 词元）同样优先于此设置，不会被 `0` 解除约束。
-
-留空表示**清除**该配置（回到推导默认），不是写入 0。
-
-### 连续图片导致的缓存回退
-
-在 CLI 传输（`/alpha/generate`）上，即使此前所有请求消息逐字节一致，新图片也可能让服务端报告的缓存命中量退回第一张历史图片处。可在「高级设置」打开「已看过的图片不再重复发送」（`offloadSeenImagesForCache`）：同一模型看过图片并回复后，插件通过 dsh 持久的 `image/offload` 事件把旧图替换成稳定文字占位；当前新图仍会送给模型，后续文本更容易保持缓存。**默认关闭**，因为模型如需重新查看已 offload 的图片，必须重新读取原文件或由用户再次附加。这是费用缓解方案，未修复 Command Code 服务端的多模态缓存行为。[实测证据与限制](docs/issue-64-cache-review.md)。
-
-## 联网搜索
-
-当你的 dsh 部署加载了 web 能力（`@deepseek-ai/dsh-web` + `@deepseek-ai/dsh-tool-web`）时，模型所用的 `web_search` 工具会由本插件的 `commandcode` 搜索 provider 承载——它用**与聊天相同的 API key 与 base URL** 调用 Command Code Provider API 的 `/alpha/web-search` 端点。你无需另外配置搜索 key、端点或模型。
-
-**默认开启。** 插件的 **设置 → Command Code** 页里有一个「用 Command Code 承载联网搜索」开关（`webSearch`，默认开）。开启时插件会自动把 `commandcode` 选为当前搜索后端；关闭则把选择权交还给之前的后端（比如 modsearch 等其他搜索插件可继续工作——不会被强制回退到 dsh 自带的 DeepSeek 搜索）。该开关在**下一次搜索时生效**，无需重启；在 dsh 0.2.1-rc.2 上它走官方易变设置写入路径，改动原地提交进运行中的 `web` 条目，而不是重挂载该条目；在 0.2.0-rc.2 上引擎把选择放在一个没有设置面的实例字段里，插件直接赋值（只存在于内存，随实例结束失效）。**若官方「网页搜索」设置里已显式选择其他后端，本开关不生效**——那个显式选择优先；0.2.0-rc.2 上没有这一设置行，看不到他人的 pin，因此开关总是接管。
-
-- 该 provider 仅在 web 服务存在时以 `commandcode` 注册进 `ctx.web`；没有它，本插件仍是纯聊天插件。
-- 开关在 `0.2.1-rc.2` 上通过引擎的易变设置写入路径选中 `commandcode`（写的就是官方「Web 搜索」卡片里「启用新版 Web 搜索 API」开关所用的同一个 `web.searchProvider` 字段，该开关还会一并写 `fetchProvider`）。插件**尊重用户层已有的显式选择**：当「网页搜索」设置已 pin 其他后端时，它让 `commandcode` 保持已注册但未被选中，并把这一状态报出来（开关的提示文案，外加一行宿主日志），而不是覆盖对方；只有在没人 pin 该字段时才接管，并记住被顶掉的后端，在关闭开关或卸载插件时恢复。`0.2.0-rc.2`（以及各 alpha）既没有该易变引用也没有 `web` 的设置行，选择是引擎自己的 `searchProviderId` 实例字段：插件按同一套「记住被顶掉的后端、只归还自己拿走的」规则直写内存，也看不到其他写者的 pin。若你想更稳妥地固定，可设置 `searchProvider: commandcode`（或 `$DSH_WEB_SEARCH_PROVIDER=commandcode`）；即使运行时选择无法提交，该配置仍然生效。
-- dsh 工具的 `numResults` 会被收敛到 Command Code 的取值范围（1–10，默认 5）；结果映射为 dsh 的 `WebSearchSource` 结构（`url`/`title`/`snippet`）。
-
-> 这里直接使用 Command Code Provider API（与官方 CLI 内置的 `web_search` 相同），因此与 DeepSeek 原生搜索后端不同。
-
-## 零数据保留（ZDR）
-
-Command Code 可以让请求只经由「不留存提示词与回复、也不用于训练」的上游——官方 CLI 的开关是 `CMD_ZDR=1`，Provider API 上则是在请求头发 `x-cmd-zdr: 1`（[官方文档](https://commandcode.ai/docs/resources/zdr)）。
-
-**默认关闭。** 在「隐私与安全」卡片里打开「零数据保留（ZDR）」（`zdr`），或写进 profile 配置。本插件的实现方式：
-
-- 开启后，**每次聊天请求**都会带上 ZDR 请求头。插件仍维护官方 CLI 的例外名单（`KNOWN_NON_ZDR_MODELS`，截至 2026-10-21 共 18 个模型，例如 `claude-fable-5`、`stealth/glyph-cluster:free`、`stepfun/Step-3.7-Flash`、`tencent/hy4-preview`）供查询。没有可用 ZDR 上游时，服务端返回 `422 cmd_zdr_no_providers`；插件不会去掉请求头重试。
-- 万一仍被拒绝（名单过期，或那一刻没有空闲的 ZDR 上游容量），错误信息会说明原因并给出关闭 ZDR 的办法，而不是抛出一个光秃秃的 HTTP 422。
-- **ZDR 通常更贵**：容量有限，按各上游实价透传计费，且每次请求落在哪个上游可能不同。会话费用读数仍按常规目录价估算；真实单价见 Command Code Studio 的用量页。
-- 各套餐均可使用；ZDR 请求按套餐的默认额度（而非提升额度）计量。
-
-## 注意事项与限制
-
-- **图片输入按模型能力限制**：仅 Vision 模型接受图片，纯文本模型会直接拒绝。
-- **图片尺寸按实际请求上报**：适配器覆盖 `imageRequestTarget`（图片请求目标），把本路由真正发送的目标上报给宿主 —— 长边 1568、编码后上限 1 MiB；宿主的截图类调用方据此估算，拿到的是网关实际收到的尺寸与字节数，而不是归一化原图。
-- 含图片的会话切换到纯文本模型会被 dsh 拒绝——请改选带 *`Image`* 标记的模型，或先移除图片。
-- **图片很多的长会话不会中途失效**：服务端对单次请求体有大小上限（约 50 MB，官方未公开），会话累积大量截图后，原本会在此后每一次请求都失败。现在超出预算的最旧图片会被替换成一段标明附件的"图片已省略"文字，较新的图片照常发送；若请求仍被判为过大，会先以更小的图片预算重试一次，再报错。
-- **不支持 `stop` 序列**：携带它的请求会报错。
-- 在旧版 `/alpha/generate` 传输中，推理块不会重放到后续轮次；在 `/provider/v1/chat/completions` 传输中，历史推理会以 `reasoning_content` 回传，以便工具调用循环保留思维链。两种传输都只重放带配对工具结果的工具调用。
-- 模型目录无需 key 即可浏览；对话请求需要 key。
-
-## 权限与隐私
-
-本插件只在本地与你的 Command Code 账号之间通信：本地仅读写凭据存储与模型缓存文件（兜底读取 `~/.commandcode/auth.json`）；网络仅访问 Command Code API。无遥测。打开**零数据保留**（同样默认关闭）后，聊天请求必须经由 ZDR 上游；没有可用 ZDR 上游的模型会报错，不会按常规方式继续发送。
-
-## 关闭 / 卸载
-
-- **禁用**（不删除）：编辑你 profile 的 `cordis.patch.yml`，注释掉（或移除）`llm-commandcode` 行，或设置 `disabled: true`，然后重启。
-- **完全卸载**：
-
-  ```sh
-  dsh plugin --profile web remove @mars-sea/dsh-commandcode-provider
-  ```
-
-  你在 dsh 凭据库和 `~/.commandcode/auth.json` 中的 API key 不会被改动。
-
-## 开发
-
-```sh
-npm install
-npm run typecheck   # tsc --noEmit
-npm run build       # tsdown -> lib/
-```
-
-在 profile 里试用本地构建：
-
-```sh
-dsh plugin --profile web add /path/to/dsh-commandcode-provider
-```
-
-修改 `src/` 后需重新运行 `npm run build` 并重启应用。
-
-## 社区与反馈
-
-- <img src="https://cdn.simpleicons.org/github/111827" width="16" alt="GitHub" /> [GitHub 仓库](https://github.com/Mars-Sea/dsh-commandcode-provider)
-- <img src="https://cdn.simpleicons.org/github/111827" width="16" alt="Releases" /> [GitHub Releases](https://github.com/Mars-Sea/dsh-commandcode-provider/releases)
-- <img src="https://cdn.simpleicons.org/npm/111827" width="16" alt="npm" /> [npm 包](https://www.npmjs.com/package/@mars-sea/dsh-commandcode-provider)
-- <img src="https://cdn.simpleicons.org/discourse/111827" width="16" alt="Linux.do" /> [Linux.do 社区](https://linux.do/)
-
-## 许可证
-
-MIT —— 见 [LICENSE](./LICENSE)。部分内容移植自 [pi-commandcode-provider](https://github.com/patlux/pi-commandcode-provider)（MIT）。
+- **插件包**：一条 `dsh plugin add` 命令安装 `commandcode` provider 路由，带实时模型目录。
+- **设置页**：账户列表（密钥、网页登录、实时额度、专用模型）、模型显示、隐私开关与连接参数。
+- **目录带标注**：模型选择器里标注套餐档位、折扣/`FREE` 徽章、峰谷时段、图片支持与上下文长度，免费模型置顶。
+- **多账户轮换**：一个账户用量打满后自动切换到下一个；可固定优先账户，也可把模型指派给专用账户。
+- **浏览器内登录获取 key**：一键发起官方授权流程，完成后密钥自动写入本机凭据服务。
+- **套餐与配额面板**：可选的侧边栏卡片，显示当前服务账号的套餐、5 小时 / 每周两个配额窗口、余额与重置时间。
+- **会话费用估算**：在输入框下方的 token 计数旁显示估算金额（`≈`），按持久化历史逐次请求计价。
+- **模型分析**：按最近会话或日期查看词元、估算成本、响应速度与失败/重试。[统计口径](docs/模型成本与性能分析.md)。
+- **联网搜索**：dsh 的 `web_search` 工具由 Command Code 承载（`/alpha/web-search`），复用聊天同一个 key 与端点。
+- **零数据保留**：可选的 ZDR 路由（`x-cmd-zdr: 1`），默认关闭。
+- **上下文与输出上限**：可全局或按模型覆盖宿主计量的上下文窗口，也可限制或省略单轮 `max_tokens`。
+- **推理强度与图片**：支持推理强度的模型在选择器中可选档位；Vision 模型支持发送图片。
+- **终端界面**：同一次安装即可服务 [dsh-TUI](#终端界面dsh-tui) 配置，终端里有自己的 `/settings` → Command Code 页面。
 
 ## 界面截图
 
@@ -327,7 +55,210 @@ MIT —— 见 [LICENSE](./LICENSE)。部分内容移植自 [pi-commandcode-prov
 
 <img src="assets/screenshots/settings-page.png" alt="Command Code 设置页面（含账户用量卡片）" width="640">
 
-### 发布入口
+## 安装
 
-发布包提供插件根入口、`/client` 网页入口、`/locale/*.json` 语言包及 `/package.json` 元数据。
-源码只保存在仓库中；未发布的 `./src/*` 不再列入导出声明。`npm run test:pack` 根据实际打包文件核对入口。
+```sh
+dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@latest
+```
+
+本构建面向 **dsh `0.2.0-rc.2` 与 `0.2.1-rc.2`** —— 两个已验证引擎，都走 RC（候选发布版）通道。`0.2.0-rc.2` 至今仍是 npm `latest` 指向的版本，也就是官方默认安装会跑的那一版；`0.2.1-rc.2` 挂在 `next` 标签上。使用 `0.2.1-alpha.5` 或更早版本的配置需先升级引擎，再安装本构建。兼容性细节 —— peer（对等依赖）范围、`engines.dsh` 准入规则、按引擎配对的包版本 —— 见[引擎兼容](docs/agent-reference/engine-compatibility.md)。
+
+**更早的 dsh 版本**已不再支持：覆盖 dsh 0.1.7 的最后一个插件版本是 `0.11.17`，0.1.2–0.1.6 线的最后一个版本是 `0.11.11`，0.5.0 时代 Harness 线的最后一个版本是 `0.9.1` —— 三者都按精确版本安装，且都不再维护。
+
+> **pnpm 11 会拦下刚发布的新版本。** 它的 `minimumReleaseAge` 默认为 1440 分钟，发布不足一天的版本会被跳过，`@latest` 解析到**上一个**版本 —— 而且是静默的，命令照样以成功退出。想装 24 小时内发布的版本，必须写精确版本号：`@mars-sea/dsh-commandcode-provider@0.11.15`。这一点对每个 profile 都成立，包括下面的终端界面。
+
+**更新** —— 用与安装时相同的 tag，然后重启 Web 应用。每个 profile 各自更新 —— 终端界面有独立的插件列表：
+
+```sh
+dsh plugin --profile web update @mars-sea/dsh-commandcode-provider@latest
+dsh plugin --profile dsh-tui update @mars-sea/dsh-commandcode-provider@latest
+```
+
+## 获取 API key 并验证
+
+最简单的途径是官方 CLI（Node.js 22+）：
+
+```sh
+npm i -g command-code@latest
+cmd login        # macOS/Linux；Windows 原生版：cmdc login
+```
+
+也可以不装 CLI，直接在 **设置 → Command Code** 点击「登录 Command Code」：浏览器会打开 commandcode.ai 授权页（与 `cmd login` 相同的流程），完成后密钥自动写入本机凭据服务。还可以在 [Keys 设置页](https://commandcode.ai/mars-sea/settings/keys) 创建 key 后手动粘贴，或 `export COMMANDCODE_API_KEY="user_..."`。
+
+> 登录流程依赖 Host 与浏览器在同一台机器（回环回调）。Host 在远程机器上时请使用手动粘贴；若组合配置里写了字面量 `apiKey`，它仍优先于登录写入的凭据。
+
+**验证方式**：重启后，在 **设置 → Command Code** 填入 API key 并保存。**设置 → Models** 出现 **Command Code** 卡片，模型选择器在 **commandcode** 下列出实时目录。选择套餐内包含的模型发送消息即可。
+
+## 终端界面（dsh-TUI）
+
+**每个 dsh profile 有独立的插件列表**，所以上面那条 Web 安装命令不会装到终端里 —— 还要把插件装进 `dsh-tui` profile，并写死精确版本号（新版本发布后的 24 小时内，只写包名或 `@latest` 会被静默解析到上一个版本，结果就是全新的终端安装既没有 `/settings` → Command Code 页面，也看不到任何 `commandcode` 模型）：
+
+```sh
+dsh plugin --profile dsh-tui add @mars-sea/dsh-commandcode-provider@latest
+```
+
+之后在模型选择器里选，或者直接指定：
+
+```text
+/model commandcode/deepseek/deepseek-v4.1-flash
+```
+
+`/model` 会列出所有已注册的 provider，Command Code 的实时目录连同套餐/优惠/上下文标注一起出现；`/commandcode` 用量面板在终端里同样可用。
+
+**填写 API key。** 终端没有网页版 Models 页面，所以插件会在终端设置页里声明自己的页面 —— **`/settings` → Command Code** —— 包含 API key、API 地址、隐藏套餐外模型、当前账号和命令语言。key 字段是只写的：它只显示"是否已配置"，输入的内容写进凭据库，不会写进任何 settings 文档。同一页面还把整个模型目录列成勾选框，按套餐档位分组、免费模型排在最前；默认全部勾选 —— 未设置白名单就等于"显示全部模型"，选择会以「单模型覆盖」的形式保存在网页端编辑的 `visibleModels` 列表旁边，两个界面可以混用。
+
+也可以在终端外配置 key。凭据解析先命中者生效，顺序如下：
+
+- 组合配置里写死的字面量 `apiKey` 最优先，写了就一直用它。
+- 否则按凭据引用解析（`apiKeyEnv`，默认 `COMMANDCODE_API_KEY`）。在 **Web、桌面端、SDK、ACP 等挂载了凭据服务的 profile** 里由凭据服务统一解析：**0.2.1-alpha.3 起已保存的凭据优先于启动环境变量**；更早的版本顺序相反，那时环境变量优先。
+- **headless（无头）profile 有意不挂载凭据服务**，因此只有启动环境变量、项目 `.env`、`$DSH_HOME/.env` 生效 —— **在页面上保存过的 key 不会到达 headless 运行**，请为这类运行导出变量或写 `.env`。
+- 最后兜底是官方 CLI 写入的 `~/.commandcode/auth.json`。
+
+```sh
+export COMMANDCODE_API_KEY="user_..."   # 启动环境变量
+cmd login                               # 写入 ~/.commandcode/auth.json
+```
+
+**把 Command Code 设为默认模型。** dsh-TUI 写死了自己的 agent 路由，它的 `agent-default-model` 设置不会覆盖它。请在自己的 profile patch（`$DSH_HOME/profiles/dsh-tui/cordis.patch.yml`）里覆盖 `agent-loop` 行：
+
+```yaml
+- id: agent-loop
+  inject: [tuiStartup]
+  config:
+    agents:
+      - id: main
+        provider: commandcode
+        model: deepseek/deepseek-v4.1-flash
+        reasoningEffort: max
+        cwd: !!js process.cwd()
+```
+
+## 用量面板
+
+插件注册了 `/commandcode` 斜杠命令，显示各账户的用量状态：
+
+```text
+/commandcode        （或 /commandcode status）
+```
+
+命令的文案跟随 shell 的语言设置：在 `llm-commandcode` 插件配置里显式写 `lang: 'en' | 'zh'` 优先；否则读 `LC_ALL`/`LANG`；再否则回退到 `zh`。web 设置页是独立表面，跟随浏览器自身的语言偏好。
+
+## 多账户轮换
+
+有多个 Command Code 订阅时，插件可以在一个账户达到用量限额后**自动切换到下一个账户**：
+
+- **配置**：在 **设置 → Command Code** 的「账户」卡片点击「添加账户」，然后选择「网页登录」（在浏览器授权后自动保存 key；登录未完成不会留下空账户）或「粘贴密钥」。添加、重命名、更换或清除密钥、移除、固定等账户操作**立即生效**，无需点击页面底部的「保存」；「保存」只作用于页面上的其他设置。顶层 key 始终是第一顺位的 `default` 账户。
+- **手动切换**：在账户行的「⋯」菜单中选择「固定使用此账户」即可指定优先账户；所选账户耗尽时自动回落到其他账户，窗口重置后自动恢复。「取消固定」回到自动轮换。
+- **专用模型**：展开某个账户，从实时模型目录**多选**它的「专用模型」。请求这些模型且该账户可用时使用该账户；账户耗尽或密钥失效时自动回落到常规轮换。一个模型同一时间只属于一个账户，给另一个账户选择它会自动移过去（仍保存为 `modelAccountRules`）。
+- **只显示常用模型**：在「模型与上下文」卡片的「可见模型」中勾选要保留的模型，模型选择器只列出这些；不勾选则显示全部（默认行为不变）。
+
+每个账户行直接显示套餐、状态以及 5 小时 / 每周额度条，展开可查看完整报告，也可运行 `/commandcode`。等价的 YAML 见[配置](#配置)一节。
+
+## 配置
+
+**设置 → Command Code** 把选项分为：**账户**（密钥、网页登录、实时额度、固定账户、专用模型）、**模型与上下文**（隐藏套餐外模型、可见模型、上下文长度、输出上限）、**隐私与安全**（零数据保留）、**集成与显示**（联网搜索、侧边栏额度卡片）、**高级设置**（API 地址、超时、传输重试、图片卸载）。同一组选项也位于 `$DSH_HOME/settings.yaml`，修改即刻生效，无需重启：
+
+```yaml
+llm-commandcode:
+  apiKeyEnv: COMMANDCODE_API_KEY        # 第一顺位（default）账户
+  activeAccount: COMMANDCODE_API_KEY_2   # 可选：手动指定当前账户
+  accounts:                              # 可选：之后的轮换顺序
+    - label: Go #2
+      apiKeyEnv: COMMANDCODE_API_KEY_2
+  modelAccountRules:                     # 可选：按模型路由到账户（第一条命中生效）
+    - models:                            # 目录模型 id（可多选）
+        - deepseek/deepseek-v4-pro
+      account: COMMANDCODE_API_KEY_2
+  visibleModels:                         # 可选：只在选择器中显示这些模型；不填显示全部
+    - deepseek/deepseek-v4-pro
+  apiBase: https://api.commandcode.ai
+  workingDir: /path/to/project           # 可选
+  modelsCachePath: ~/.commandcode/models-cache.json
+  requestTimeoutMs: 300000              # 默认 300s（与官方 CLI 一致）
+  streamIdleTimeoutMs: 300000           # 默认 300s
+  # offloadSeenImagesForCache: true     # 可选：模型回复后不再重发旧图片
+  showSidebarQuota: true                 # 可选：侧边栏套餐与配额卡片（默认关闭）
+  zdr: true                              # 可选：只经由零数据保留上游（默认关闭）
+  # contextWindow: 131072                # 可选：对所有模型的自定义上下文长度
+  # contextWindowOverrides:              # 可选：按模型的上下文长度；优先于 contextWindow
+  #   deepseek/deepseek-v4-pro: 65536
+  # maxOutputTokens: 65536               # 可选：单轮输出上限；0 = 不发送 max_tokens
+```
+
+### 上下文、输出与图片调节
+
+| 配置项 | 作用 |
+|---|---|
+| `contextWindow`、`contextWindowOverrides` | 替换模型目录里的 `context_length` —— 宿主据此计量上下文并触发压缩（issue #86）。目录值偏大时会话会撞上 `context_length_exceeded`，偏小时又会过早压缩，用它把窗口调成模型真实容量。取值必须是 1 – 10 000 000 的整数 token，接受 `32K`/`1M` 简写。 |
+| `maxOutputTokens` | 单轮 `max_tokens` 上限。插件每次请求本来就带 `max_tokens`，取「模型公布上限、运行时学到的上限、网关上限 131 072」三者最小 —— 被动硬限制，到点平台直接切断，模型收不到任何提示。填正整数只能**收紧**；填 `0` 则**不发送**该字段，这是「长回答写到一半被切断」的解法（`0` 只对 CLI 与 OpenAI 两条传输生效，Claude 走的 Anthropic Messages 端点必填该字段）。留空表示**清除**该配置，不是写入 0。 |
+| `offloadSeenImagesForCache` | 在 CLI 传输上，即使此前所有请求消息逐字节一致，新图片也可能让服务端报告的缓存命中量退回第一张历史图片处。开启后，同一模型看过图片并回复后，旧图会被替换成稳定文字占位，后续文本更容易保持缓存。它只能缓解费用上涨，未修复 Command Code 服务端的多模态缓存行为；模型如需重新查看已 offload 的图片，必须重新读取原文件。默认关闭。[实测证据](docs/issue-64-cache-review.md)。 |
+
+## 联网搜索
+
+当你的 dsh 部署加载了 web 能力（`@deepseek-ai/dsh-web` + `@deepseek-ai/dsh-tool-web`）时，模型所用的 `web_search` 工具会由本插件的 `commandcode` 搜索 provider 承载 —— 它用**与聊天相同的 API key 与 base URL** 调用 Command Code Provider API 的 `/alpha/web-search` 端点，无需另外配置搜索 key、端点或模型。
+
+**默认开启。** 插件的 **设置 → Command Code** 页里有一个「用 Command Code 承载联网搜索」开关（`webSearch`），开启时插件会自动把 `commandcode` 选为当前搜索后端；关闭则把选择权交还给之前的后端（比如 modsearch 等其他搜索插件可继续工作 —— 不会被强制回退到 dsh 自带的 DeepSeek 搜索）。该开关在**下一次搜索时生效**，无需重启。
+
+- 该 provider 仅在 web 服务存在时以 `commandcode` 注册进 `ctx.web`；没有它，本插件仍是纯聊天插件。
+- 若官方「网页搜索」设置里已显式选择其他后端，那个显式选择优先：插件让 `commandcode` 保持已注册但未被选中，并把这一状态报出来，而不是覆盖对方。只有在没人 pin 该字段时才接管，并记住被顶掉的后端，在关闭开关或卸载插件时恢复。若想更稳妥地固定，可设置 `searchProvider: commandcode`（或 `$DSH_WEB_SEARCH_PROVIDER=commandcode`）。
+- dsh 工具的 `numResults` 会被收敛到 Command Code 的取值范围（1–10，默认 5）；结果映射为 dsh 的 `WebSearchSource` 结构（`url`/`title`/`snippet`）。
+
+> 这里直接使用 Command Code Provider API（与官方 CLI 内置的 `web_search` 相同），因此与 DeepSeek 原生搜索后端不同。
+
+## 零数据保留（ZDR）
+
+Command Code 可以让请求只经由「不留存提示词与回复、也不用于训练」的上游 —— 官方 CLI 的开关是 `CMD_ZDR=1`，Provider API 上则是在请求头发 `x-cmd-zdr: 1`（[官方文档](https://commandcode.ai/docs/resources/zdr)）。
+
+**默认关闭。** 在「隐私与安全」卡片里打开「零数据保留（ZDR）」（`zdr`），或写进 profile 配置。
+
+- 开启后，**每次聊天请求**都会带上 ZDR 请求头。没有可用 ZDR 上游的模型，服务端返回 `422 cmd_zdr_no_providers`；插件不会去掉请求头重试。
+- 万一仍被拒绝（名单过期，或那一刻没有空闲的 ZDR 上游容量），错误信息会说明原因并给出关闭 ZDR 的办法，而不是抛出一个光秃秃的 HTTP 422。
+- **ZDR 通常更贵**：容量有限，按各上游实价透传计费，且每次请求落在哪个上游可能不同。会话费用读数仍按常规目录价估算；真实单价见 Command Code Studio 的用量页。
+
+## 注意事项与限制
+
+- **图片输入按模型能力限制**：仅 Vision 模型接受图片，纯文本模型会直接拒绝；含图片的会话切换到纯文本模型会被 dsh 拒绝。适配器按实际发送的目标上报图片尺寸（长边 1568、编码后上限 1 MiB）；服务端对单次请求体也有上限（约 50 MB，官方未公开），超出预算的最旧图片会被替换成一段标明附件的"图片已省略"文字，仍被判为过大的请求会先以更小的图片预算重试一次。
+- **不支持 `stop` 序列**：携带它的请求会报错。
+- **两条传输都会重放历史推理内容**，使工具调用循环保留思维链：`/provider/v1/chat/completions` 以 `reasoning_content` 回传，`/alpha/generate` 则在重建的 assistant 轮次里带上 `reasoning` 块。两种传输都只重放带配对工具结果的工具调用。
+- **工具参数 schema 会被归一化**到服务端要求的对象根上，因此未声明对象根的工具（第三方插件手写的 schema、MCP 服务自己的 `inputSchema`、生成的根 `$ref`）不再会让整个回合以 `schema must be a JSON Schema of 'type: "object"'` 失败。
+- 模型目录无需 key 即可浏览；对话请求需要 key。
+
+## 权限与隐私
+
+本插件只在本地与你的 Command Code 账号之间通信：本地仅读写凭据存储与模型缓存文件（兜底读取 `~/.commandcode/auth.json`）；网络仅访问 Command Code API。无遥测。打开**零数据保留**（同样默认关闭）后，聊天请求必须经由 ZDR 上游；没有可用 ZDR 上游的模型会报错，不会按常规方式继续发送。
+
+## 关闭 / 卸载
+
+- **禁用**（不删除）：编辑你 profile 的 `cordis.patch.yml`，注释掉（或移除）`llm-commandcode` 行，或设置 `disabled: true`，然后重启。
+- **完全卸载**：`dsh plugin --profile web remove @mars-sea/dsh-commandcode-provider`。你在 dsh 凭据库和 `~/.commandcode/auth.json` 中的 API key 不会被改动。
+
+## 开发
+
+```sh
+npm install
+npm run typecheck   # tsc --noEmit
+npm run build       # tsdown -> lib/
+```
+
+在 profile 里试用本地构建：`dsh plugin --profile web add /path/to/dsh-commandcode-provider`。修改 `src/` 后需重新运行 `npm run build` 并重启应用。
+
+发布包提供插件根入口、`/client` 网页入口、`/locale/*.json` 语言包及 `/package.json` 元数据。源码只保存在仓库中；未发布的 `./src/*` 不再列入导出声明。`npm run test:pack` 根据实际打包文件核对入口。
+
+## 参考文档
+
+本 README 背后的工程细节在 [`docs/agent-reference/`](docs/agent-reference/) 下：
+
+- [适配器与线上协议](docs/agent-reference/adapter-protocol.md) —— 传输、流式、图片、工具调用、推理重放、输出预算、ZDR 请求头
+- [账号与重试](docs/agent-reference/accounts-and-retry.md) —— 凭据解析、账户轮换、限流、联网搜索的选择规则
+- [客户端与设置](docs/agent-reference/client-and-settings.md) —— 设置页、网页登录、终端设置、模型选择
+- [用量与成本](docs/agent-reference/usage-and-cost.md) —— 会话费用读数、价格快照、压缩计费
+- [引擎兼容](docs/agent-reference/engine-compatibility.md) —— 支持的 dsh 版本、peer 范围、`engines.dsh` 准入
+- [模型目录](docs/agent-reference/model-catalog.md) —— 目录同步、套餐档位、推理档位、优惠、ZDR 例外集
+
+## 社区与反馈
+
+[GitHub 仓库](https://github.com/Mars-Sea/dsh-commandcode-provider) · [GitHub Releases](https://github.com/Mars-Sea/dsh-commandcode-provider/releases) · [npm 包](https://www.npmjs.com/package/@mars-sea/dsh-commandcode-provider) · [Linux.do 社区](https://linux.do/)
+
+## 许可证
+
+MIT —— 见 [LICENSE](./LICENSE)。部分内容移植自 [pi-commandcode-provider](https://github.com/patlux/pi-commandcode-provider)（MIT）。

@@ -61,7 +61,7 @@ type CommandCodeProtocol = 'cli' | 'openai' | 'messages';
 declare const DEFAULT_MAX_OUTPUT_TOKENS = 131072;
 //#endregion
 //#region src/adapter.d.ts
-declare const COMMAND_CODE_CLI_VERSION = "1.87.1";
+declare const COMMAND_CODE_CLI_VERSION = "1.87.3";
 declare const DEFAULT_API_BASE = "https://api.commandcode.ai";
 /**
  * The output budget this bundle asks for, and the ceiling it will never exceed.

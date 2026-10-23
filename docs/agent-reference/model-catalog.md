@@ -41,6 +41,24 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   (`thinkingmachines/inkling-small` 65,536; 81 → 82). The four pricing-alias `incomplete` errors are
   the same known MiniMax M3.1 Flash / Ornith pair as the previous two rounds.
 
+  **Follow-up check (2026-10-23, CLI 1.87.1 → 1.87.3):** npm `latest` reached `1.87.2` (10-22T20:43Z)
+  and `1.87.3` (10-22T21:30Z). Unlike the previous silent rounds these two DO carry official changelog
+  entries — 1.87.2: `cmd acp` mod options, invalid reasoning-effort tolerance, the process-name re-set,
+  real provider errors mid-stream; 1.87.3: Claude Code permission-mode aliases and a BYOK package
+  refresh — and each is CLI-local. The artifact diff keeps endpoints (64), custom headers (5), the
+  `/alpha/generate` call sites, `promptCache`, `reasoning_effort`, the registry, effort map,
+  subscription tables and ZDR exception set identical (audit `cliDiff` empty in all four categories).
+  The server catalog moved `catalogVersion` `501a4bf9…` → `02bfc7ac…`: the default view went 96 → 92
+  while `?view=client` stays 104, because four rows went `hidden` — both dated free twins lapsed
+  (`ornith/ornith-1.5-122b:free` `2026-10-22T06:00Z`, `minimax/minimax-m3.1-flash:free`
+  `2026-10-22T10:45Z`) and the MiMo V2.5 pair retired (`xiaomi/mimo-v2.5`, `xiaomi/mimo-v2.5-pro`;
+  MiMo V2.6 carries their promotional rate as the regular one, so this is a like-for-like replacement,
+  not a temporary hide). The models docs page, the pricing page and the go/goat/pro/max plan pages drop
+  the same rows plus the Xiaomi collaboration block; the ZDR page and What's New are unchanged. The
+  other 88 survivors keep every capability field. Snapshot cleanup: plans 96 → 92, efforts 66 → 65,
+  image 74 → 71, thinking 17 → 16, deals 8 → 4, vendored price rows 94 → 92, output-limit rows
+  82 → 79; ZDR stays 18.
+
   - `KNOWN_EFFORTS` — model → selectable reasoning-effort levels. Authoritative source is the live
     `?view=client` catalog's `reasoningEfforts` (since command-code@1.82.4 the CLI no longer keeps this map
     bundled — `getSupportedEfforts()` resolves it through the catalog, whose embedded bootstrap snapshot
@@ -162,10 +180,14 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
     `expiresAt`, so an un-updated plugin never shows a lapsed discount — and `modelPriceTable(now)` falls
     the row back to its pre-discount `listRates` on that same instant, so the composer cannot price a
     session at a rate the provider has stopped charging. A deal with no `expiresAt` never lapses and keeps
-    its promotional rates forever (the two MiMo rows, MiniMax M3). The first dated FREE row arrived on
+    its promotional rates forever (MiniMax M3; the two MiMo V2.5 rows that shared the rule left the
+    catalog on 2026-10-23). The first dated FREE row arrived on
     2026-10-20 (`minimax/minimax-m3.1-flash:free`, ends `2026-10-21T10:45Z`): `dealLabel()` drops the badge
     at that instant while the `:free` id stays zero-priced by id suffix — `isFreeModel()` deliberately does
-    not read the clock (a free SKU normally leaves the catalog when its window closes).
+    not read the clock (a free SKU normally leaves the catalog when its window closes). Both dated FREE
+    rows took exactly that path on 2026-10-23: `minimax/minimax-m3.1-flash:free` and
+    `ornith/ornith-1.5-122b:free` went `hidden` and left the default catalog view, the pricing page and
+    the models docs page, so the badge map no longer carries either.
   - `KNOWN_PEAK_PRICING` — catalog IDs with hourly (peak/off-peak) pricing, synced from the pricing page's
     **embedded model JSON `timeOfDay` blocks** (never the rendered row text — see the skill). Exactly five
     models as of 2026-09-29: `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`,

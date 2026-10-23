@@ -154,40 +154,41 @@ test('the badge and the price revert on the same instant', () => {
   }
 })
 
-test('the dated MiniMax M3.1 Flash free deal lapses on its published instant', () => {
-  // 2026-10-20 sync: the free twin carries an explicit end
-  // (`minimax-m3-1-flash-free`, expires 2026-10-21T10:45:00Z, Beijing 18:45),
-  // unlike the open-ended "while capacity lasts" previews. The 2026-10-21 check
-  // found the page had moved that end one day out (2026-10-22T10:45Z, Beijing
-  // 10-22 18:45), so the pinned instant follows the published figure. The FREE
-  // badge must stop on that instant; the `:free` id itself is priced at zero by
-  // id suffix, so only the badge moves — the row is not a `listRates` revert.
+test('the retired MiniMax M3.1 Flash free twin no longer resolves at all', () => {
+  // 2026-10-23 sync: its dated launch promo lapsed (`2026-10-22T10:45Z`), the
+  // row went `hidden` in `?view=client`, and it left the default catalog view,
+  // the pricing page and the models docs page. Both sources dropped it — the
+  // badge map (`KNOWN_DEALS`) and the vendored price rows — so no clock can
+  // resurrect a FREE badge or a zero price for it. The mechanism itself stays
+  // covered by the lapsed-deal boundary test above.
   const id = 'minimax/minimax-m3.1-flash:free'
-  const before = Date.parse('2026-10-22T10:44:59.999Z')
-  const after = Date.parse('2026-10-22T10:45:00Z')
-  assert.equal(dealLabel(id, before), 'FREE')
-  assert.equal(dealLabel(id, after), undefined)
-  for (const at of [before, after]) {
-    const price = modelPriceTable(at).models.find((m) => m.id === id)
-    assert.ok(price)
-    assert.equal(price.free, true)
-    assert.deepEqual([price.inputCost, price.outputCost, price.cacheReadCost], [0, 0, 0])
+  for (const at of [
+    Date.parse('2026-10-22T10:44:59.999Z'),
+    Date.parse('2026-10-22T10:45:00Z'),
+    Date.parse('2030-01-01T00:00:00Z'),
+  ]) {
+    assert.equal(dealLabel(id, at), undefined, `badge at ${at}`)
+    assert.equal(modelPriceTable(at).models.find((m) => m.id === id), undefined, `row at ${at}`)
   }
   // The paid sibling is priced from the page and carries no deal.
-  const paid = modelPriceTable(before).models.find((m) => m.id === 'minimax/minimax-m3.1-flash')
+  const paid = modelPriceTable(Date.parse('2030-01-01T00:00:00Z')).models.find(
+    (m) => m.id === 'minimax/minimax-m3.1-flash',
+  )
   assert.ok(paid)
   assert.deepEqual([paid.inputCost, paid.outputCost, paid.cacheReadCost], [0.15, 0.6, 0.015])
-  assert.equal(dealLabel('minimax/minimax-m3.1-flash', before), undefined)
+  assert.equal(dealLabel('minimax/minimax-m3.1-flash'), undefined)
 })
 
 test('a deal with no expiry never reverts', () => {
-  // MiMo V2.5 and MiniMax M3 carry percentage deals with no published end date.
-  // Their `listRates` are real data but must stay dormant: a permanent deal
-  // lapses never, so the promotional rates are still the charged ones.
+  // MiniMax M3 carries a 50% off percentage deal with no published end date.
+  // Its `listRates` (0.6/2.4/0.12) are real data but must stay dormant: a
+  // permanent deal never lapses, so the promotional rates are still the charged
+  // ones. MiMo V2.5 was the second such row until the 2026-10-23 sync retired
+  // it (MiMo V2.6 took over its promotional rate as the regular one).
   const far = Date.parse('2030-01-01T00:00:00Z')
-  const promo = modelPriceTable(far).models.find((m) => m.id === 'xiaomi/mimo-v2.5')
+  const promo = modelPriceTable(far).models.find((m) => m.id === 'MiniMaxAI/MiniMax-M3')
   assert.ok(promo)
-  assert.deepEqual([promo.inputCost, promo.outputCost, promo.cacheReadCost], [0.14, 0.28, 0.0028])
+  assert.deepEqual([promo.inputCost, promo.outputCost, promo.cacheReadCost], [0.3, 1.2, 0.06])
 })
 
 test('per-model allowances resolve by the same slug rules as prices', () => {

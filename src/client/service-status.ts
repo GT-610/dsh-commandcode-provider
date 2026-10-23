@@ -155,8 +155,12 @@ export interface ServiceStatusView {
    * published verdict.
    */
   badge: { label: string; tone: ServiceTone }
-  /** Compact aggregates (`可用率 7 天 100% / 30 天 99.98% · 平均响应 114 ms`); absent when none were published. */
-  detail?: string | undefined
+  /**
+   * Compact aggregates as separate segments (`可用率 7 天 100% / 30 天 99.98%`,
+   * `平均响应 114 ms`) so the page can keep each one whole when it wraps; empty
+   * when none were published.
+   */
+  detailParts: string[]
   /** The published record's age (`8 小时前更新`), not a live check. */
   updated?: string | undefined
   /** The publication-lag explanation, once the record is old enough; the page shows it as the age's tooltip. */
@@ -425,8 +429,8 @@ export function compactUptime(value: string): string {
   return fraction === '' ? `${match[1]}%` : `${match[1]}.${fraction}%`
 }
 
-/** The aggregate line, or undefined when this check carried no aggregates. */
-function detailCopy(snapshot: ServiceStatusSnapshot, t: Translate<SettingsCommandCodeKey>): string | undefined {
+/** The aggregate segments; empty when this check carried no aggregates. */
+function detailCopy(snapshot: ServiceStatusSnapshot, t: Translate<SettingsCommandCodeKey>): string[] {
   const parts: string[] = []
   const uptimes: string[] = []
   if (snapshot.uptimeWeek !== undefined) {
@@ -439,7 +443,7 @@ function detailCopy(snapshot: ServiceStatusSnapshot, t: Translate<SettingsComman
   if (snapshot.responseTimeWeekMs !== undefined) {
     parts.push(t('serviceStatusResponseWeek', { value: `${Math.round(snapshot.responseTimeWeekMs)} ms` }))
   }
-  return parts.length === 0 ? undefined : parts.join(' · ')
+  return parts
 }
 
 /** The heading verdict: a failed local probe first, else the published one. */
@@ -483,6 +487,7 @@ export function serviceStatusView(
       label,
       officialTone: 'checking',
       badge: badgeOf(probe, { label, tone: 'checking' }, t),
+      detailParts: [],
       local: local.text,
       localTone: local.tone,
       localChecking: probe.kind === 'checking',
@@ -510,7 +515,7 @@ export function serviceStatusView(
     label,
     officialTone,
     badge: badgeOf(probe, { label, tone: officialTone }, t),
-    detail: detailCopy(snapshot, t),
+    detailParts: detailCopy(snapshot, t),
     updated: snapshot.checkedAt === undefined
       ? t('serviceStatusUpdatedUnknown')
       : updatedCopy(snapshot.checkedAt, now, t),
