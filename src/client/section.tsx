@@ -303,33 +303,6 @@ export function accountIssues(entries: readonly (Pick<CommandCodeAccountUsage, '
 }
 
 /**
- * The reset button a staged field shows once it differs from the default. It
- * trails the control, and a row with nothing to reset keeps an empty slot of
- * the same width, so every staged control in a group ends on one right edge.
- */
-function FieldOverride({ label, state, disabled, t, onReset }: {
-  label: string
-  state: StagedField
-  disabled: boolean
-  t: Translate<SettingsCommandCodeKey>
-  onReset(): void
-}) {
-  if (!state.overridden && !state.clear) return <span className="cc-resetSlot" aria-hidden="true" />
-  return (
-    <button
-      type="button"
-      className="cc-iconButton"
-      disabled={disabled}
-      onClick={onReset}
-      aria-label={`${label} — ${t('reset')}`}
-      title={t('reset')}
-    >
-      <Icon name="reset" />
-    </button>
-  )
-}
-
-/**
  * One settings row, laid out like the harness's own General page: the title
  * and description on the left, the control on the right, a hairline between
  * rows.
@@ -344,7 +317,8 @@ function SettingRow({ title, titleFor, titleId, tag, description, error, control
   /** Replaces the description while set. */
   error?: string | undefined
   control?: ReactNode
-  className?: string
+  /** Extra row class, appended to `cc-row`. */
+  className?: string | undefined
 }) {
   return (
     <div className={className === undefined ? 'cc-row' : `cc-row ${className}`}>
@@ -363,9 +337,37 @@ function SettingRow({ title, titleFor, titleId, tag, description, error, control
   )
 }
 
-/** The tag a row title carries while its field overrides the default. */
-function OverrideTag({ state, t }: { state: StagedField; t: Translate<SettingsCommandCodeKey> }) {
-  return state.overridden ? <span className="cc-badge">{t('overridden')}</span> : null
+/**
+ * The title-line marker of a field that differs from its default: the
+ * "customized" badge with a small reset button right after it (a draft that
+ * only clears the stored value shows the button alone). Keeping reset on the
+ * title line, not after the control, means no row reserves an empty reset
+ * column — every control, account card and heading action ends on the same
+ * right edge.
+ */
+function OverrideTag({ label, state, disabled, t, onReset }: {
+  label: string
+  state: StagedField
+  disabled: boolean
+  t: Translate<SettingsCommandCodeKey>
+  onReset(): void
+}) {
+  if (!state.overridden && !state.clear) return null
+  return (
+    <span className="cc-overrideTag">
+      {state.overridden ? <span className="cc-badge">{t('overridden')}</span> : null}
+      <button
+        type="button"
+        className="cc-resetInline"
+        disabled={disabled}
+        onClick={onReset}
+        aria-label={`${label} — ${t('reset')}`}
+        title={t('reset')}
+      >
+        <Icon name="reset" className="cc-icon cc-btnIcon" />
+      </button>
+    </span>
+  )
 }
 
 /** One text/number field row. */
@@ -428,7 +430,7 @@ function Field({
     <SettingRow
       title={label}
       titleFor={id}
-      tag={<OverrideTag state={state} t={t} />}
+      tag={<OverrideTag label={label} state={state} disabled={disabled} t={t} onReset={onReset} />}
       description={hint}
       error={state.invalid
         ? invalidCopy(state.invalidReason, t, output === true ? 'output' : context === true ? 'context' : decimal === true ? 'duration' : 'number')
@@ -441,7 +443,6 @@ function Field({
               <span className="cc-unit">{unit}</span>
             </span>
           )}
-          <FieldOverride label={label} state={state} disabled={disabled} t={t} onReset={onReset} />
         </>
       }
     />
@@ -507,7 +508,7 @@ function ToggleField({
     <SettingRow
       title={label}
       titleFor={id}
-      tag={<OverrideTag state={state} t={t} />}
+      tag={<OverrideTag label={label} state={state} disabled={disabled} t={t} onReset={onReset} />}
       description={hint}
       control={
         <>
@@ -520,7 +521,6 @@ function ToggleField({
             disabled={disabled}
             onChange={(event) => onEdit(event.target.checked ? 'true' : 'false')}
           />
-          <FieldOverride label={label} state={state} disabled={disabled} t={t} onReset={onReset} />
         </>
       }
     />
@@ -1145,15 +1145,17 @@ function ContextCard({ state, disabled, t, onEdit, onReset, onOverrides }: FormC
         title={t('contextOverridesTitle')}
         description={<p>{t('contextOverridesHint')}</p>}
         control={
-          <PageButton
-            variant="outline"
-            size="sm"
-            icon={<Icon name="plus" className="cc-icon cc-btnIcon" />}
-            disabled={disabled || available.length === 0}
-            onClick={addRow}
-          >
-            {t('contextOverrideAdd')}
-          </PageButton>
+          <>
+            <PageButton
+              variant="outline"
+              size="sm"
+              icon={<Icon name="plus" className="cc-icon cc-btnIcon" />}
+              disabled={disabled || available.length === 0}
+              onClick={addRow}
+            >
+              {t('contextOverrideAdd')}
+            </PageButton>
+          </>
         }
       />
       {/* Only a real fetch failure explains the disabled add button; the
@@ -1262,6 +1264,14 @@ function ServiceStatusRow({ view, t }: { view: ServiceStatusView; t: Translate<S
   return (
     <SettingRow
       title={t('serviceStatusTitle')}
+      // The status-page link sits on the title line, not in the control
+      // column: the two value lines then get the row's full width.
+      tag={
+        <a className="cc-statusLink cc-statusTitleLink" href={STATUS_PAGE_URL} target="_blank" rel="noreferrer">
+          {view.linkLabel}
+          <Icon name="external" className="cc-icon cc-iconInline" />
+        </a>
+      }
       description={
         <>
           <div className="cc-statusLines">
@@ -1269,13 +1279,24 @@ function ServiceStatusRow({ view, t }: { view: ServiceStatusView; t: Translate<S
             <span className="cc-statusValue">
               <StateDot state={toneDot(view.officialTone)} size={8} />
               <span className="cc-statusVerdict">{view.label}</span>
-              {view.detail !== undefined || view.updated !== undefined ? (
-                // One wrapping text run: a no-break space glues each "·" to the
-                // word before it, so a wrapped line never starts with a dot.
+              {view.detailParts.length > 0 || view.updated !== undefined ? (
+                // Each segment is unbreakable (cc-statusPart) and carries the
+                // "·" after it behind a no-break space, so a narrow panel wraps
+                // between whole segments — never inside "13 小时前更新", and a
+                // wrapped line never starts with a dot.
                 <span className="cc-statusMeta">
-                  {view.detail}
-                  {view.detail !== undefined && view.updated !== undefined ? '\u00a0· ' : null}
-                  {view.updated !== undefined ? <span title={view.lag ?? view.hint}>{view.updated}</span> : null}
+                  {[...view.detailParts, ...(view.updated !== undefined ? [view.updated] : [])].map((part, index, parts) => {
+                    const last = index === parts.length - 1
+                    const isAge = view.updated !== undefined && last
+                    return (
+                      <span key={index}>
+                        <span className="cc-statusPart" title={isAge ? view.lag ?? view.hint : undefined}>
+                          {last ? part : `${part}\u00a0·`}
+                        </span>
+                        {last ? null : ' '}
+                      </span>
+                    )
+                  })}
                 </span>
               ) : null}
             </span>
@@ -1287,11 +1308,6 @@ function ServiceStatusRow({ view, t }: { view: ServiceStatusView; t: Translate<S
           </div>
           {view.notice !== undefined ? <p className="cc-statusNotice">{view.notice}</p> : null}
         </>
-      }
-      control={
-        <a className="cc-statusLink" href={STATUS_PAGE_URL} target="_blank" rel="noreferrer">
-          {view.linkLabel}
-        </a>
       }
     />
   )

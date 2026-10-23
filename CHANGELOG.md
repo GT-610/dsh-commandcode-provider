@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **「模型白名单」说明精简成一句**：「只列出勾选的模型，都不勾选＝显示全部。网页与终端共用。」（27 字，合并回单键 `visibleModelsHint`）。纯呈现层，白名单的暂存、校验与提交路径不动。
+- **设置页尺寸回到设计画布**（用户反馈「整体大小好像被改掉了，没有那么协调了」）：撤回同批早先加的两类调整——① 分组头、账户卡片列表、「添加账户」操作行的 `padding-right:36px` 右内缩，卡片与分组头恢复满宽；② API 地址行与模型白名单行的 `cc-rowFluid`（不折行、API 地址输入框拉伸到约 380–600px），API 地址输入框回到 280px，两行恢复普通行。
+
+### Fixed
+
+- **设置页右侧只剩一条边界**（用户反馈「右侧没有设计图好看」）：此前每行控件后都留 28px「恢复默认」空位，控件比账户卡片、分组头「刷新」、「查看模型用量」那一行多缩进 36px，形成两条右边界。现在「恢复默认」改为标题行「已自定义」徽标后的 20px 圆形图标按钮（只在字段被改过时出现），行末不再留空位，控件、卡片、分组头动作全部贴内容右缘；`FieldOverride` 组件与 `cc-resetSlot` 样式删除。
+
+- **窄设置面板下宽控件不再折到第二行**（用户截图：约 560px 内容区里，模型白名单的「显示全部」+ 下拉框、API 地址输入框都掉到第二行右侧）：设置行文字列下限从 300px 降到 200px，控件保持设计稿尺寸（输入框 280px、下拉 200px）并始终与标题同行，代价是窄面板下说明文字多折一两行；门槛由约 640px 降到约 540px。
+- **服务状态行不再从中间断开「13 小时前更新」**：「打开状态页」链接移到「服务状态」标题行右侧（带外链图标），两行状态获得整行宽度；官方行的可用率、平均响应、更新时间各为不可断开的一段（视图字段 `detail` 改为 `detailParts`），放不下时整段换到下一行，换行后的行首不会是「·」。
+
+### Verification
+
+- `npm run typecheck` 通过；`npm test` **1111／1111** 通过；`npm run build` 完成，`lib/client.js` 已不含 `cc-rowFluid` 与 `padding-right:36px`。**未做**：在运行中的 dsh web 宿主内实测（宿主重启后需新的带令牌地址）。
+
 ## [0.15.1] - 2026-10-22
 
 ### Changed

@@ -272,7 +272,7 @@ test('serviceStatusView renders the checking state before the first check lands'
   assert.equal(view.label, zh.serviceStatusChecking)
   assert.equal(view.officialTone, 'checking')
   assert.deepEqual(view.badge, { label: zh.serviceStatusChecking, tone: 'checking' })
-  assert.equal(view.detail, undefined)
+  assert.deepEqual(view.detailParts, [])
   assert.equal(view.local, zh.serviceStatusLocalChecking)
   assert.equal(view.localTone, 'muted')
   assert.equal(view.localChecking, true)
@@ -285,8 +285,9 @@ test('serviceStatusView names the verdict, the aggregates and the published age'
   assert.equal(view.label, zh.serviceStatusUp)
   assert.equal(view.officialTone, 'ok')
   assert.deepEqual(view.badge, { label: zh.serviceStatusUp, tone: 'ok' })
-  // Padding zeros dropped (100.00% → 100%), both windows under one "uptime".
-  assert.equal(view.detail, '可用率 7 天 100% / 30 天 99.98% · 平均响应 114 ms')
+  // Padding zeros dropped (100.00% → 100%), both windows under one "uptime",
+  // each aggregate its own segment so the page never breaks inside one.
+  assert.deepEqual(view.detailParts, ['可用率 7 天 100% / 30 天 99.98%', '平均响应 114 ms'])
   assert.equal(view.updated, t('serviceStatusUpdatedMinutes', { count: 5 }))
   assert.equal(view.lag, undefined)
   assert.equal(view.notice, undefined)
