@@ -155,12 +155,14 @@ export const KNOWN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   // `minimax/minimax-m3-free` sibling gained the same set in the bundle.
   'MiniMaxAI/MiniMax-M3': ['low', 'medium', 'high'],
   // 2026-10-20 (catalog-only sync; the 1.86.1 artifact folded the pair in on
-  // 2026-10-21): the MiniMax M3.1 Flash launch pair carries the full five-level
-  // set, unlike its three-level M3 sibling. Both ids came from the live
-  // `?view=client` catalog — the same catalog-side evidence
-  // `reflection/beam:free` arrived on.
+  // 2026-10-21): MiniMax M3.1 Flash carries the full five-level set, unlike its
+  // three-level M3 sibling. It came from the live `?view=client` catalog — the
+  // same catalog-side evidence `reflection/beam:free` arrived on. The `:free`
+  // twin left this map on 2026-10-23: its dated promo lapsed
+  // (`2026-10-22T10:45Z`), the row went `hidden` in `?view=client`, and it left
+  // the default catalog view, the pricing page and the models docs page — the
+  // same retirement path `inclusionai/ling-3.1-flash:free` took.
   'minimax/minimax-m3.1-flash': ['low', 'medium', 'high', 'xhigh', 'max'],
-  'minimax/minimax-m3.1-flash:free': ['low', 'medium', 'high', 'xhigh', 'max'],
   // `stealth/space-bunny-alpha` (command-code@1.65.0, `max` added by 1.73.4)
   // was RETIRED by command-code@1.74.3: the artifact drops its own four-level
   // effort list and ships the row as `hidden` instead, the official Desktop
@@ -308,10 +310,10 @@ export const KNOWN_IMAGE_MODELS: ReadonlySet<string> = new Set([
   // inputModalities:["text","image"].
   'mistral/mistral-large-4',
   // 2026-10-20 (catalog-only sync): inputModalities:["text","image"] in the
-  // live `?view=client` catalog, and the models docs page labels both rows
-  // Vision. Free twin included — it is the same model under a promo id.
+  // live `?view=client` catalog, and the models docs page labels the row
+  // Vision. The `:free` twin left this map with the other snapshots on
+  // 2026-10-23 (promo lapsed, row hidden).
   'minimax/minimax-m3.1-flash',
-  'minimax/minimax-m3.1-flash:free',
   'moonshotai/Kimi-K2.5',
   'moonshotai/Kimi-K2.6',
   'moonshotai/Kimi-K2.7-Code',
@@ -319,9 +321,9 @@ export const KNOWN_IMAGE_MODELS: ReadonlySet<string> = new Set([
   'moonshotai/Kimi-K3',
   // 2026-10-21 (command-code@1.86.1 sync): inputModalities:["text","image"] in
   // the live `?view=client` catalog and `caps.vision: true` on both the pricing
-  // page and the models docs page. Free twin included — same model, promo id.
+  // page and the models docs page. The `:free` twin left this map on 2026-10-23
+  // with the other snapshots (promo lapsed, row hidden).
   'ornith/ornith-1.5-122b',
-  'ornith/ornith-1.5-122b:free',
   'sakana/fugu-ultra',
   // command-code@1.65.0; Vision per the official registry and inputModalities.
   'stepfun/Step-3.7-Flash',
@@ -334,7 +336,9 @@ export const KNOWN_IMAGE_MODELS: ReadonlySet<string> = new Set([
   'xai/grok-4.6',
   // command-code@1.59.0; Vision per the official registry and inputModalities.
   'xai/grok-4.7',
-  'xiaomi/mimo-v2.5',
+  // `xiaomi/mimo-v2.5` left this map on 2026-10-23: MiMo V2.6 took over its
+  // rates, the row went `hidden` in `?view=client`, and the default catalog
+  // view, the pricing page and the models docs page stopped serving it.
   // command-code@1.62.0 added the MiMo V2.6 family (Flash, Pro, Pro
   // UltraSpeed); all three are Vision. None carries a reasoning flag in any
   // source, so no effort or automatic-reasoning entry belongs beside these.
@@ -536,11 +540,10 @@ export const KNOWN_THINKING_MODELS: ReadonlySet<string> = new Set([
   'meituan/LongCat-2.0',
   // 2026-10-21 (command-code@1.86.1 sync): Ornith 1.5 122B carries
   // `reasoning: true` with no `reasoningEfforts` in the artifact registry and in
-  // the live catalog, so it thinks automatically and gets no selector. Both the
-  // free twin and the paid id behave the same way; the free row is only a
-  // dated promotion (`KNOWN_DEALS`), not a different capability.
+  // the live catalog, so it thinks automatically and gets no selector. The
+  // `:free` twin — the same capability under a dated promo id — left this map on
+  // 2026-10-23 when that promo lapsed and the row went hidden.
   'ornith/ornith-1.5-122b',
-  'ornith/ornith-1.5-122b:free',
 ])
 
 /**
@@ -717,8 +720,6 @@ export const MODEL_OUTPUT_TOKEN_LIMITS: ReadonlyMap<string, number> = new Map([
   // minimax
   ['minimax/minimax-m3.1-flash', 524288],
   // minimax
-  ['minimax/minimax-m3.1-flash:free', 524288],
-  // minimax
   ['MiniMaxAI/MiniMax-M2.5', 131072],
   // minimax
   ['MiniMaxAI/MiniMax-M2.7', 131072],
@@ -776,10 +777,6 @@ export const MODEL_OUTPUT_TOKEN_LIMITS: ReadonlyMap<string, number> = new Map([
   ['xai/grok-4.6', 500000],
   // xai
   ['xai/grok-4.7', 500000],
-  // xiaomi
-  ['xiaomi/mimo-v2.5', 131072],
-  // xiaomi
-  ['xiaomi/mimo-v2.5-pro', 131072],
   // xiaomi
   ['xiaomi/mimo-v2.6-flash', 131072],
   // xiaomi
@@ -905,12 +902,11 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   // tier (individual-go through teams-pro) — the "all":true shape shared by the
   // Qwen 3.8 family above.
   'mistral/mistral-large-4': 'go',
-  // 2026-10-20 (catalog-only sync): the MiniMax M3.1 Flash launch pair is
-  // Go-tier — `minimumPlan: "individual-go"` in the live `?view=client` catalog
-  // and every tier true in the pricing page's embedded availability. The free
-  // twin is a dated launch promo (see `KNOWN_DEALS`), not a plan difference.
+  // 2026-10-20 (catalog-only sync): MiniMax M3.1 Flash is Go-tier —
+  // `minimumPlan: "individual-go"` in the live `?view=client` catalog and every
+  // tier true in the pricing page's embedded availability. The `:free` twin left
+  // this map on 2026-10-23 (promo lapsed, row hidden).
   'minimax/minimax-m3.1-flash': 'go',
-  'minimax/minimax-m3.1-flash:free': 'go',
 
   'moonshotai/Kimi-K2.5': 'go',
   'moonshotai/Kimi-K2.6': 'go',
@@ -923,19 +919,20 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   'nvidia/nemotron-3.5-super-vl': 'go',
   // 2026-10-21 (command-code@1.86.1 sync): Ornith 1.5 122B is a Go-tier
   // open-weight MoE — `minimumPlan: "individual-go"` in the live catalog and
-  // every tier true in the pricing page's embedded availability. The free twin
-  // is a dated launch promo (see `KNOWN_DEALS`), not a plan difference.
+  // every tier true in the pricing page's embedded availability. The `:free`
+  // twin left this map on 2026-10-23 (promo lapsed, row hidden).
   'ornith/ornith-1.5-122b': 'go',
-  'ornith/ornith-1.5-122b:free': 'go',
   'poolside/laguna-s-2.1-free': 'go',
   // 2026-10-16, first seen at the 1.84.0 sync: the free Beam preview was the one
   // new id the DEFAULT catalog view served then (93 ids). This map tracks that
-  // view: the eight `hidden:true` rows of `?view=client` do not belong here,
-  // unlike `KNOWN_NON_ZDR_MODELS`, whose membership is the catalog/artifact
-  // union (see the decision record, chapter 7). The 2026-10-20 catalog-only sync
-  // took the view to 94 ids — the MiniMax M3.1 Flash pair joined and
-  // `stealth/cat-jam:free` left — and the 1.86.1 sync takes it to 96 with the
-  // Ornith 1.5 122B pair.
+  // view: the `hidden:true` rows of `?view=client` do not belong here, unlike
+  // `KNOWN_NON_ZDR_MODELS`, whose membership is the catalog/artifact union (see
+  // the decision record, chapter 7). The 2026-10-20 catalog-only sync took the
+  // view to 94 ids — the MiniMax M3.1 Flash pair joined and
+  // `stealth/cat-jam:free` left — the 1.86.1 sync took it to 96 with the Ornith
+  // 1.5 122B pair, and the 2026-10-23 sync takes it to 92: both `:free` twins
+  // lapsed and the MiMo V2.5 pair went hidden, so those four ids left this map
+  // and `?view=client` now hides twelve rows.
   'reflection/beam:free': 'go',
   'stepfun/Step-3.5-Flash': 'go',
   'stepfun/Step-3.7-Flash': 'go',
@@ -958,8 +955,9 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   'thinkingmachines/inkling': 'go',
   'thinkingmachines/inkling-small': 'go',
   'xai/grok-4.5': 'go',
-  'xiaomi/mimo-v2.5': 'go',
-  'xiaomi/mimo-v2.5-pro': 'go',
+  // `xiaomi/mimo-v2.5` and `xiaomi/mimo-v2.5-pro` left this map on 2026-10-23:
+  // MiMo V2.6 took over their rates, both rows went `hidden` in `?view=client`,
+  // and this map tracks the default view.
   // command-code@1.62.0 added the MiMo V2.6 family; these two are on every tier
   // (the Go plan page lists both), while the Pro UltraSpeed sibling is GOAT —
   // individual-go is what separates them.
@@ -1206,22 +1204,16 @@ export interface KnownDeal {
 
 export const KNOWN_DEALS: Readonly<Record<string, KnownDeal>> = {
   'MiniMaxAI/MiniMax-M3': { label: '50% off' },
-  // 2026-10-20 (catalog-only sync). The MiniMax M3.1 Flash free twin is a DATED
-  // launch promo, unlike the open-ended "while capacity lasts" previews below:
-  // the pricing page publishes deal `minimax-m3-1-flash-free` at 100% off from
-  // 2026-10-19T11:00Z through 2026-10-22T10:45Z (Beijing 10-19 19:00 → 10-22
-  // 18:45; the 2026-10-21 check found the end date moved one day out from the
-  // `10-21T10:45Z` the first sync recorded) and says "Free for a limited time.
-  // No daily request limit." Carrying `expiresAt` makes the FREE badge lapse on
-  // its own via `dealLabel()`; the `:free` id keeps pricing at zero through the
-  // price table's id-suffix rule.
-  'minimax/minimax-m3.1-flash:free': {
-    label: 'FREE',
-    free: true,
-    expiresAt: '2026-10-22T10:45:00Z',
-  },
-  'xiaomi/mimo-v2.5-pro': { label: '99% off' },
-  'xiaomi/mimo-v2.5': { label: '98% off' },
+  // `minimax/minimax-m3.1-flash:free` (the 2026-10-20 dated launch promo, 100%
+  // off through `2026-10-22T10:45Z`) left this map on 2026-10-23: the promo
+  // lapsed, the row went `hidden` in `?view=client`, and it is gone from the
+  // default catalog view, the pricing page and the models docs page — the same
+  // retirement path `inclusionai/ling-3.1-flash:free` took. A dated promo only
+  // needs its badge while the row is still served.
+  // `xiaomi/mimo-v2.5` (98% off) and `xiaomi/mimo-v2.5-pro` (99% off) left this
+  // map on the same check: MiMo V2.6 took over their rates as regular ones, both
+  // rows went `hidden`, and the pricing page dropped the whole Xiaomi
+  // collaboration block, so there is no deal left to display.
   'poolside/laguna-s-2.1-free': { label: 'FREE', free: true },
   // 2026-10-16 (1.84.0 sync); the third live free preview in this map.
   // "Free while capacity lasts", no daily request limit, and — unlike its Glyph
@@ -1255,16 +1247,12 @@ export const KNOWN_DEALS: Readonly<Record<string, KnownDeal>> = {
   // price table either. Unlike those free models it is NOT ZDR-routed — the
   // page's own tip says so outright (see `KNOWN_NON_ZDR_MODELS`).
   'stealth/glyph-cluster:free': { label: 'FREE', free: true },
-  // 2026-10-21 (command-code@1.86.1 sync). Ornith 1.5 122B's free twin is a
-  // DATED launch promo like MiniMax M3.1 Flash's: the pricing page publishes
-  // deal `ornith-1-5-122b-free` at 100% off "until 11:00 PM PT on October 21"
-  // (`expires: 2026-10-22T06:00Z`, Beijing 10-22 14:00), no daily request limit.
-  // The paid id is listed at $0.16/$0.64/$0.02 and carries no deal.
-  'ornith/ornith-1.5-122b:free': {
-    label: 'FREE',
-    free: true,
-    expiresAt: '2026-10-22T06:00:00Z',
-  },
+  // `ornith/ornith-1.5-122b:free` (the 2026-10-21 dated launch promo, 100% off
+  // "until 11:00 PM PT on October 21" = `2026-10-22T06:00Z`) left this map on
+  // 2026-10-23 for the same reason as its MiniMax sibling: the promo lapsed, the
+  // row went `hidden` in `?view=client`, and the default catalog view, the
+  // pricing page and the models docs page stopped serving it. The paid id stays
+  // listed at $0.16/$0.64/$0.02 and carries no deal.
   // `stealth/space-bunny-alpha` (command-code@1.65.0, 100% off "Free while the
   // stealth preview lasts", auto-applied, no published end date) left this map
   // on 2026-10-06: command-code@1.74.3 hides the model, the catalog and the

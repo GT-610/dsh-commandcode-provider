@@ -88,18 +88,19 @@ export { DEFAULT_MAX_OUTPUT_TOKENS, MODEL_CATALOG_TTL_MS } from './gateway-facts
 // Request / connection defaults (protocol constants). The model/plan/deal
 // capability snapshot lives in ./capabilities.ts — the sync-only surface.
 // ---------------------------------------------------------------------------
-// Rides every request as `x-command-code-version`. The 1.87.1 bump is a pure
-// header sync: the 1.86.3 -> 1.87.1 artifacts add no runtime contract this
-// plugin consumes. Their only material differences are CLI-local (a `/btw`
-// mid-turn side question, disk-full write protection, and the permission-mode
-// rename `standard` -> `default` plus a new `dont-ask`), and the official
-// changelog still has no entry for 1.85.0-1.87.1, so all four releases were
-// verified by artifact diff: endpoints (64), custom headers (5, all `x-`
-// prefixed), the `/alpha/generate` call sites, `promptCache` and
-// `reasoning_effort` are identical. The capability snapshot is unchanged from
-// 1.86.3 apart from two monthly-allowance rows and one output-limit row synced
-// on 2026-10-22 — see ./capabilities.ts and ./model-prices.ts.
-export const COMMAND_CODE_CLI_VERSION = '1.87.1'
+// Rides every request as `x-command-code-version`. The 1.87.3 bump is a pure
+// header sync: the 1.87.1 -> 1.87.3 artifacts add no runtime contract this
+// plugin consumes. Both patches are CLI-local (1.87.2: `cmd acp` mod options,
+// invalid reasoning-effort tolerance, process-name re-set, real provider errors
+// mid-stream; 1.87.3: Claude Code permission-mode aliases, BYOK package
+// refresh), and the artifact diff keeps endpoints (64), custom headers (5, all
+// `x-` prefixed), the `/alpha/generate` call sites, `promptCache`,
+// `reasoning_effort`, the model registry, efforts, subscriptions and the ZDR
+// exception set identical. Only the server catalog moved on 2026-10-23: four
+// rows were hidden (`minimax/minimax-m3.1-flash:free`,
+// `ornith/ornith-1.5-122b:free`, `xiaomi/mimo-v2.5`, `xiaomi/mimo-v2.5-pro`),
+// so the snapshot drops them — see ./capabilities.ts and ./model-prices.ts.
+export const COMMAND_CODE_CLI_VERSION = '1.87.3'
 export const DEFAULT_API_BASE = 'https://api.commandcode.ai'
 
 /**
