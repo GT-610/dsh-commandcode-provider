@@ -19,12 +19,19 @@ const pkg = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 ) as PackageManifest
 
-/**
- * 一个「裸」语义化版本号：不带任何范围操作符。
- * 支持范围必须由若干裸版本号用 `||` 析取而成，`^`／`~`／`>=` 这类会静默放行
- * 相邻预发布版与稳定补丁版的写法一律不可接受（issue #43 的教训）。
- */
+/** 一个「裸」语义化版本号：不带任何范围操作符（`dshReleases` 的键必须是它）。 */
 const BARE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
+
+/**
+ * 支持范围是「同通道区间」而不是裸版本析取（用户 2026-10-24 拍板）：
+ * 下界是本通道已验证的最新 RC，上界写成下一个 minor 的 `-0` 预发布号。
+ *
+ * 为什么上界必须是 `<0.2.2-0`：按 semver 优先级 `0.2.2-rc.1 < 0.2.2`，所以
+ * `<0.2.2` 会**放行**下一个 minor 的 RC；`~0.2.1-rc.2` 更糟（等价于
+ * `>=0.2.1-rc.2 <0.3.0`）。`-0` 是唯一能精确排除「下一个 minor 的
+ * 任何预发布」的写法（node semver 实测，见 docs/agent-reference/engine-compatibility.md）。
+ */
+const SUPPORTED_RANGE = /^>=(\d+\.\d+\.\d+-rc\.\d+) <(\d+)\.(\d+)\.\d+-0$/
 
 test('every Harness peer and development package shares one supported release range', () => {
   const peers = pkg.peerDependencies ?? {}
@@ -38,24 +45,32 @@ test('every Harness peer and development package shares one supported release ra
   for (const name of harnessPeers) {
     assert.equal(dev[name], range, `${name} development range`)
   }
-  // 支持范围是「已验证引擎版本」的析取：每个分支都必须是裸版本号，
-  // 于是一个分支对应且只对应一个经过引擎验证的宿主。
-  const admitted = range.split('||').map((part) => part.trim())
-  for (const part of admitted) {
-    assert.match(
-      part,
-      BARE_VERSION,
-      `peer range branch ${JSON.stringify(part)} must be a bare verified version`,
+  const admitted = SUPPORTED_RANGE.exec(range)
+  assert.ok(
+    admitted,
+    `peer range ${JSON.stringify(range)} must be ">=<newest verified RC> <next minor>-0"`,
+  )
+  const lower = admitted[1]!
+  assert.equal(lower, '0.2.1-rc.2', 'the lower bound is the newest verified RC of this channel')
+  // 区间上界必须是下界的下一个 minor：借 major/minor 组回拼，防止写成 0.3 或 0.2.1。
+  const nextMinorUpperBound = `${admitted[2]}.${Number(admitted[3]) + 1}`
+
+  // 记录是「实测过哪些版本」，区间是「放行哪些版本」：方向相反但必须相容——
+  // 每条记录都要落在区间内，且不得早于已验证下界（rc.1 及更早从未验证过）。
+  const channelPrefix = lower.slice(0, lower.indexOf('-'))
+  const rank = (version: string): number => {
+    const parsed = new RegExp(`^${channelPrefix.replaceAll('.', '\\.')}(?:-rc\\.(\\d+))?$`).exec(version)
+    assert.ok(parsed, `${version} must be a bare version in the ${channelPrefix} channel below ${nextMinorUpperBound}`)
+    return parsed[1] === undefined ? Number.MAX_SAFE_INTEGER : Number(parsed[1])
+  }
+  const declared = Object.keys(pkg.dsh?.compatibility?.dshReleases ?? {})
+  for (const version of declared) {
+    assert.match(version, BARE_VERSION, `${version} must be a bare version`)
+    assert.ok(
+      rank(version) >= rank(lower),
+      `${version} is older than the verified lower bound ${lower}, so the range cannot admit it`,
     )
   }
-  // 范围与 dshReleases 必须逐条对应：既不允许放行没有验证记录的引擎，
-  // 也不允许某个已验证引擎被范围漏掉。
-  const declared = Object.keys(pkg.dsh?.compatibility?.dshReleases ?? {})
-  assert.deepEqual(
-    [...admitted].sort(),
-    [...declared].sort(),
-    'the peer range must be exactly the disjunction of the declared-compatible releases',
-  )
 })
 
 test('per-release DSH compatibility lists only verified releases', () => {
@@ -74,20 +89,17 @@ test('per-release DSH compatibility lists only verified releases', () => {
   }
 })
 
-test('DSH compatibility keeps both verified engine releases of the RC channel', () => {
-  // 用户 2026-10-18 拍板的向下兼容策略：同时保留 npm `latest` 仍指向的
-  // `0.2.0-rc.2` 与最新的 `0.2.1-rc.2`。这与上一轮「同通道只留最新一版」的
-  // 单引擎收敛相反 —— 按官方默认方式安装的用户拿到的正是 `latest`，只声明
-  // rc.2 会把这一整批用户挡在准入之外（issue #77／#78 的复现面）。
-  // 代价照旧：新增分支必须先在完整真实引擎矩阵下跑通（`npm run test:engine`
-  // 与 `npm run test:install` 逐版本结算），声明面不允许出现没有验证记录的引擎。
-  // 离线测试只约束数量、版本与形态，不请求网络。
+test('DSH compatibility records every verified release of the admitted channel range', () => {
+  // 用户 2026-10-24 拍板：准入由 `engines.dsh` 的区间负责（同 0.2.1 通道的 rc.2 及以上
+  // 自动放行），本记录只列**实际跑过完整引擎矩阵**的版本 —— rc.2（npm `latest`）与
+  // rc.3（npm `next`）。未来同通道新 RC 无需改声明即可准入，但只有补上记录才算已验证；
+  // 这份记录同时是 `test:engine` 与 `test:install` 的矩阵来源，加记录就必须先跑通它们。
   const declared = Object.keys(pkg.dsh?.compatibility?.dshReleases ?? {})
-  assert.equal(declared.length, 2, 'keep exactly two declared engine releases')
+  assert.equal(declared.length, 2, 'keep exactly two verified engine releases')
   assert.deepEqual(
     [...declared].sort(),
-    ['0.2.0-rc.2', '0.2.1-rc.2'],
-    'the RC channel keeps the npm-latest engine alongside the newest verified one',
+    ['0.2.1-rc.2', '0.2.1-rc.3'],
+    'the RC channel records the npm-latest engine alongside the newest verified one',
   )
 })
 

@@ -1,6 +1,6 @@
 # DSH 升级审计清单
 
-本清单对应 `dsh-v0.2.0-rc.2` → `dsh-v0.2.1-rc.2`（2026-10-17），聚焦视图为 `dsh-v0.2.1-alpha.5` → `dsh-v0.2.1-rc.2`。上游路径均相对[固定目标标签](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.2)，结论与验证边界见[对接说明](对接说明.md)。先从完整目录、变更清单与实际导入盘点，再选择阅读；不把关键词检索命中当作全部接口或文档。**本文是当轮审计的历史记录**：其中「声明面收敛为单一 `0.2.1-rc.2`、Cordis／Schemastery 收紧为单分支」的描述已被 2026-10-18 的反转取代（现行口径见[《决策记录》第八章第14条](决策记录.md#八dsh-引擎兼容范围与验证边界)）；破坏点、逐包源码差异与接口结论仍然有效。
+本清单对应 `dsh-v0.2.0-rc.2` → `dsh-v0.2.1-rc.2`（2026-10-17），聚焦视图为 `dsh-v0.2.1-alpha.5` → `dsh-v0.2.1-rc.2`。上游路径均相对[固定目标标签](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.2)，结论与验证边界见[对接说明](对接说明.md)。先从完整目录、变更清单与实际导入盘点，再选择阅读；不把关键词检索命中当作全部接口或文档。**本文是当轮审计的历史记录**：其中「声明面收敛为单一 `0.2.1-rc.2`、Cordis／Schemastery 收紧为单分支」的描述已被 2026-10-18 的反转取代（现行口径见[《决策记录》第八章第14条](决策记录.md#八dsh-引擎兼容范围与验证边界)）；破坏点、逐包源码差异与接口结论仍然有效。**2026-10-24 的 rc.3 轮次**（`dsh-v0.2.1-rc.2` → `dsh-v0.2.1-rc.3`）结论见本文第四章：那轮是零源码破坏，只有声明面与验证矩阵变化。
 
 ## 一、直接依赖与接口范围
 
@@ -84,3 +84,17 @@
 2. **本轮没有新增升级主题目录。**目标树的 `docs/upgrade-guide/` 最新目录是 `v0.2.1-alpha.4`；`v0.2.1-rc.1` 与 `v0.2.1-rc.2` 目录均不存在，两份 delta（完整与增量）的 `docs/upgrade-guide/**` 变更数均为 0。rc.2 的两项新特性（DeepSeek-V4.1-Flash-1017 适配、DeepSeek Search 与 Fetch API）不以升级主题记录，而落在包说明与上表两组 `.agents/notes/**`／`docs/persistence-changes/**` 新文档中——这也是本清单把“说明文档盘点”与“升级主题盘点”分开维护的原因。
 
 3. 其余中文仅扫描标题及迁移条目，英文和翻译源不宣称全文阅读。完整 delta 相对 `0.2.0-rc.2` 会让 `docs/upgrade-guide/**` 整体显示为新增（基线标签早于这些目录的落库），这不代表本轮新增了主题；判断以 `alpha.5` → `rc.2` 的增量为准。Cordis 相关提案（`vendor/cordis-rc11-upgrade-plan.md`）本轮状态仍是 `proposed`，不能将拟议替代当作已发布行为。
+
+## 四、2026-10-24 rc.3 轮次（补充盘点）
+
+1. **范围与规模**：`dsh-v0.2.1-rc.2`（`687f282e8625c6b8d11ff58211a90524be2e4317`）→ `dsh-v0.2.1-rc.3`（`1f81c047fc48fa190a683e469daa699857e9afe8`），完整 delta **646 个变更路径、349 份变更包清单**，采集错误为空。只采集一份 delta：上一轮（2026-10-18 反转）未重新采集上游，本轮目标与基线相邻，没有需要并集补齐的缺口。
+
+2. **20 个直接依赖包源码零差异**：`packages/{llm,settings,credentials,web,interaction,typert,api,boot,attachment,session-projection,util}/**` 下，插件实际导入的宿主包（`dsh-llm`、`dsh-settings`、`dsh-credentials`、`dsh-web`、`dsh-commands`、`dsh-user-approval`、`dsh-typert-protocol`、`dsh-api-remotes`、`dsh-api-gateway`、`dsh-app-boot`、`dsh-plugin-manager`、`dsh-attachment`、`dsh-session-projection`、`dsh-timeout`、`dsh-launch-environment`）**没有源码级变更**，只有 `package.json` 版本号与 README 改动。`vendor/cordis` 与 `vendor/schemastery` 仍是 `4.0.5` / `3.18.5`，逐文件零差异。
+
+3. **准入与预置模块表逐字相同**：`packages/boot/app-boot/src/plugin-compatibility.ts`（`engines.dsh` 优先、`semver.satisfies` 带 `includePrerelease`）与 `packages/client/web/src/seed.ts` 相对 rc.2 无任何字节差异——这既解释了为何故障纯属声明面，也确认 `dsh.client.inject` 与 `lib/client.js` 的三个 `require()` 目标仍然有效。
+
+4. **插槽只做新增**：`slots.ts` 的 diff 只有新增项——`conversation.session.header.views.actions`、`sidebar.panellist.actions`、`sidebar.right.tab.guide.actions`（第三个由 `docs/subsystems/slots.md` 与本轮源码共同确认），全部是 list 类、由官方 `ui-entry-customization` 注册；插件既用的五个插槽（`settings.section`、`settings.models.provider-card`、`main`、`sidebar.footer.action`、`conversation.composer.dock`）声明与 rc.2 逐字相同。`dsh-client-ui-primitives` 的导出符号集合逐个相同（`Menu`／`StateDot`／`MenuEntry`／`StateDotState`／`Button` 全在）。
+
+5. **说明文档 163 份、新增升级主题 1 个**：`docs/upgrade-guide/v0.2.1-rc.2/new-session-blank-reuse/`（New Session 复用工作区空白 Session），属 workspace／session 行为，插件不调用该路径。与插件直接相关的两份已逐字比对：`docs/user/guide/providers.md` 新增的「官方 DeepSeek 模型列表跟随 API 发布」作用于官方 `llm-deepseek-api-key` 提供方；`docs/subsystems/slots.md` 记录上述三个新插槽。注意 rc.2 轮次曾记录「`v0.2.1-rc.2` 升级目录不存在」，本轮目标树已补上该目录，属上游补录而非新增主题。
+
+6. **未做**：真实浏览器渲染、真实账号登录、付费生成、真实提供商端到端；引擎矩阵与隔离安装的通过只证明三份声明与该引擎的加载、准入与安装路径一致。

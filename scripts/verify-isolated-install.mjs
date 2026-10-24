@@ -27,23 +27,38 @@ const requiredHarnessPeers = Object.keys(manifest.peerDependencies ?? {})
     && manifest.peerDependenciesMeta?.[name]?.optional !== true)
 
 /**
- * 已验证引擎版本集合：取自 `@deepseek-ai/dsh-*` peer 范围的每个裸版本分支。
+ * 已验证引擎版本集合：取自 `dsh.compatibility.dshReleases`。
  *
+ * 准入范围（`engines.dsh`）是「同 0.2.1 通道、rc.2 及以上」的区间，会自动放行未来的同通道
+ * RC；但隔离安装矩阵必须逐版本真实装一遍，所以这里的矩阵来源是**记录**而不是范围。
  * 断言锚点选 `@deepseek-ai/dsh-llm`：它是适配器的宿主底座，任何 fresh generation 都必须
  * 解析到它。`dsh-invariants` 曾承担这个角色，但上游在 0.2.1-alpha.1 删除了整个包
  * （npm 上从未发布该版本），因此插件不再声明它。
- * 声明与兼容记录的一致性由 `tests/package.test.ts` 守；这里额外断言两者逐条对应，
+ * 声明与兼容记录的相容性由 `tests/package.test.ts` 守；这里再做一次轻量自检，
  * 避免插件清单改了一处、隔离安装却在验证另一处。
  */
 const declaredPeerRange = manifest.peerDependencies['@deepseek-ai/dsh-llm']
 if (typeof declaredPeerRange !== 'string') throw new Error('manifest declares no @deepseek-ai/dsh-llm peer')
-const declaredVersions = declaredPeerRange.split('||').map((part) => part.trim())
-const recordedVersions = Object.keys(manifest.dsh?.compatibility?.dshReleases ?? {})
-if ([...declaredVersions].sort().join() !== [...recordedVersions].sort().join()) {
+const declaredVersions = Object.keys(manifest.dsh?.compatibility?.dshReleases ?? {}).sort()
+if (declaredVersions.length === 0) throw new Error('package.json declares no dsh.compatibility.dshReleases')
+
+const channelRange = /^>=(\d+\.\d+\.\d+-rc\.(\d+)) <\d+\.\d+\.\d+-0$/.exec(declaredPeerRange)
+if (channelRange === null) {
   throw new Error(
-    'the @deepseek-ai/dsh-llm peer range and dsh.compatibility.dshReleases disagree '
-    + `(declared ${declaredVersions.join(' | ')}; recorded ${recordedVersions.join(' | ') || 'none'})`,
+    'the @deepseek-ai/dsh-llm peer range must be a same-channel range '
+    + `">=<newest verified RC> <next minor>-0", got ${JSON.stringify(declaredPeerRange)}`,
   )
+}
+const lowerPrefix = channelRange[1].slice(0, channelRange[1].indexOf('-')).replaceAll('.', '\\.')
+const lowerRank = Number(channelRange[2])
+for (const version of declaredVersions) {
+  const parsed = new RegExp(`^${lowerPrefix}(?:-rc\\.(\\d+))?$`).exec(version)
+  const rank = parsed === null ? Number.NaN : (parsed[1] === undefined ? Number.MAX_SAFE_INTEGER : Number(parsed[1]))
+  if (!(rank >= lowerRank)) {
+    throw new Error(
+      `dsh.compatibility.dshReleases lists ${version}, which ${JSON.stringify(declaredPeerRange)} does not admit`,
+    )
+  }
 }
 
 /** Run a child command and return its captured streams or throw with diagnostics. */

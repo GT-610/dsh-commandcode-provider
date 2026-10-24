@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.3] - 2026-10-24
+
+### Changed
+
+- **修复：本地 dsh 升到 `0.2.1-rc.3` 后插件被宿主禁用、使用不了。** 根因完全在声明面——宿主自 `0.2.1-alpha.4` 起判定插件兼容性时只读 `engines.dsh`，旧声明 `0.2.0-rc.2 || 0.2.1-rc.2` 不覆盖 `0.2.1-rc.3`，于是插件行被禁用、bundle 层被静默跳过、`dsh plugin add` 被拒；rc.3 相对 rc.2 没有任何插件使用的接口变化。
+- **兼容声明从「裸版本析取」改为「同通道区间」：`>=0.2.1-rc.2 <0.2.2-0`。** `engines.dsh`、`dsh.compatibility.dsh` 与 15 个 peer／19 个开发依赖统一为该区间：`0.2.1` 通道中 `0.2.1-rc.2` 及以后的每个 RC（含未来的 `rc.4`）直接准入，下一个 minor 的预发布（`0.2.2-rc.*`）与正式版都被排除。**上界必须写 `<0.2.2-0`**：按 semver 优先级 `0.2.2-rc.1 < 0.2.2`，写成 `<0.2.2` 会放行下一个 minor 的 RC；`~0.2.1-rc.2` 等价于 `>=0.2.1-rc.2 <0.3.0`，同样错（node semver 实测）。代价明确接受：新 RC 自动准入，但仍要补进 `dshReleases` 才算验证过。
+- **`dsh.compatibility.dshReleases` 保留两条实测记录**（`0.2.1-rc.2`、`0.2.1-rc.3`）：准入由区间负责，记录只列跑过完整引擎矩阵的版本，并充当 `test:engine`／`test:install` 的矩阵来源。
+- **`@deepseek-ai/cordis` / `@deepseek-ai/schemastery` 收敛为单分支 `~4.0.5` / `~3.18.5`。** rc.2 与 rc.3 的 vendor 实测都是这两个正式版，两代引擎配对相同；上一轮的 `~4.0.4 || ~4.0.5` / `~3.18.4 || ~3.18.5` 只为覆盖已退出 npm `latest` 的 `0.2.0-rc.2`。
+- **删除 pre-rc.2 引擎的网页搜索选择分派。** `0.2.0-rc.2` 已退出 npm `latest` 并落在支持区间之外，`src/web-search.ts` 的实例字段 `searchProviderId` 分支与 `tests/web-search.test.ts` 的四个旧形状用例一并删除，只留易变引用（`Volatile`）路径与「没有可写选择面时不抛错」的降级契约测试。
+- **`scripts/verify-isolated-install.mjs` 的矩阵来源改为 `dsh.compatibility.dshReleases`**（区间写法无法用 `||` 拆出逐版本列表）；`tests/package.test.ts` 的断言同步改为「区间形状 + 下界 + 每条记录落在区间内且不早于下界」。
+
+### Verification
+
+- **rc.3 相对 rc.2 零运行代码破坏**：采集 646 个变更路径、349 份包清单、采集错误为空；宿主准入语义（`packages/boot/app-boot/src/plugin-compatibility.ts`）与 Web 预置模块表（`packages/client/web/src/seed.ts`）逐字相同；插件导入的宿主包源码零变更；五个既用插槽全部保留（rc.3 只新增 `sidebar.panellist.actions`、`conversation.session.header.views.actions`、`sidebar.right.tab.guide.actions` 三个 list 类插槽，由官方 `ui-entry-customization` 注册）；`dsh-client-ui-primitives` 导出符号集合逐个相同。
+- `npm run typecheck` 退出码 0；`npm test` **1107／1107** 通过、0 失败（比 0.15.2 的 1111 少 4 项，正是删除的四个旧引擎形状用例）；`npm run build` 完成，`lib/index.js`、`lib/index.d.ts`、`lib/client.js` 已重建。
+- `npm run test:engine` **2/2**：`dsh 0.2.1-rc.2` 与 `dsh 0.2.1-rc.3` 都输出 `host compatibility preflight admits this plugin`，末行 `engine-load smoke passed on all 2 declared-compatible engines (0.2.1-rc.2, 0.2.1-rc.3)`。
+- `npm run test:install` **2/2**（pnpm `10.34.5`）：`isolated install passed with pnpm 10.34.5 (dsh 0.2.1-rc.2)` 与 `(dsh 0.2.1-rc.3)`，末行 `engine matrix verified: 0.2.1-rc.2, 0.2.1-rc.3`。
+- **锁文件**：18 个 `@deepseek-ai/dsh-*` 开发依赖整批升到 `0.2.1-rc.3`（这些包之间是精确 peer，不能混版，混版必然 `ERESOLVE`），`zod` 随之从 4.6.5 变为 4.4.3（rc.3 改为共享顶层副本，删掉三个嵌套副本），`resolve.exports` 2.0.3 → 2.0.4（`dsh-app-boot` 依赖）；重建解析顺带造成的 `rolldown`／`@oxc-project/types`／`fast-uri`／`cac` 等无关漂移已按上一版逐条回滚，`npm ci --dry-run` 退出码 0。
+- **未做**：真实浏览器渲染、正在运行的 dsh Web 宿主内端到端实测（需重启宿主重新做准入判定）、真实账号登录与付费生成。本地开发树已在 `0.2.1-rc.3` 上跑通 typecheck 与 1107 项测试。
+
 ## [0.15.2] - 2026-10-23
 
 ### Changed

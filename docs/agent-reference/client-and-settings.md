@@ -65,9 +65,9 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   does not lie beneath a marked node is REFUSED. Six consequences are load-bearing:
   (1) **Every Config field except the top-level `apiKey` secret is marked via `markVolatileFields()`** — an
     unmarked field would be invisible to AND unwritable from the settings page. The mark is UNCONDITIONAL:
-    `.volatile()` is a schemastery 3.18.3 feature and every supported engine ships `~3.18.4` or
-    `~3.18.5-alpha.1`, so the method
-    is always present (that is why `@deepseek-ai/schemastery` is a peer at `~3.18.4 || ~3.18.5-alpha.1`, not `^3.18.2` — a
+    `.volatile()` is a schemastery 3.18.3 feature and every supported engine (the whole
+    `>=0.2.1-rc.2 <0.2.2-0` range) ships `~3.18.5`, so the method
+    is always present (that is why `@deepseek-ai/schemastery` is a peer at `~3.18.5`, not `^3.18.2` — a
     profile resolving 3.18.2 would mark nothing and render a blank settings form). `apiKey` stays unmarked
     on purpose: no settings surface writes it (page and TUI both write keys through the credentials seam),
     so a config-file edit to it reloading the fiber is correct for a secret literal.

@@ -10,13 +10,11 @@
  * the model-facing `web_search` tool needs no separate configuration.
  *
  * The second half of this module is the SELECTION seam: which registered search
- * backend `ctx.web` actually runs. That seam has TWO engine shapes, and both are
- * supported. dsh 0.2.1-rc.2 turned the choice into a per-call `Volatile` field of
- * the `web` profile entry, so it is changed through the host settings service
- * rather than by assigning a runtime field. Engines up to and including
- * 0.2.1-alpha.4 kept it in the private instance field `searchProviderId`, which
- * has no settings surface and can only be assigned in memory — see
- * {@link createCommandCodeSearchSelection}.
+ * backend `ctx.web` actually runs. dsh 0.2.1-rc.2 turned the choice into a per-call
+ * `Volatile` field of the `web` profile entry, so it is changed through the host
+ * settings service rather than by assigning a runtime field. The supported
+ * engine range (`engines.dsh`) starts at rc.2, so that reference is the only
+ * shape this module serves — see {@link createCommandCodeSearchSelection}.
  *
  * @module dsh-commandcode-provider/web-search
  */
@@ -186,48 +184,6 @@ function searchProviderRef(web: WebRuntime): unknown {
   return member(member(web, 'config'), 'searchProvider')
 }
 
-/**
- * Structural view of the PRE-rc.2 selection field.
- *
- * `searchProviderId` is a TypeScript-private parameter property on the older
- * `WebRuntime`, so the compiled runtime property is an ordinary writable own
- * field read on every `search()` call — the seam this plugin used before
- * `0.2.1-rc.2` replaced it with a volatile reference. Unlike the reference it
- * has no profile representation: the assignment lives and dies with the
- * instance.
- */
-interface LegacySearchField {
-  /** The selected backend id, read per call by the old `search()`. */
-  read(): string | undefined
-  /** Assign the field; `false` when the instance refuses the write. */
-  write(value: string | undefined): boolean
-}
-
-/**
- * The pre-rc.2 instance field, or `undefined` when this runtime does not carry
- * it.
- *
- * An OWN property is the discriminator, not a value test: a runtime of the
- * reference shape never has `searchProviderId` at all, so the two shapes cannot
- * both answer and neither needs to be preferred over the other.
- */
-function legacySearchField(web: WebRuntime): LegacySearchField | undefined {
-  if (!Object.prototype.hasOwnProperty.call(web, 'searchProviderId')) return undefined
-  const shaped = web as unknown as { searchProviderId: string | undefined }
-  return {
-    read: () => text(shaped.searchProviderId),
-    write: (value) => {
-      try {
-        shaped.searchProviderId = value
-        return true
-      } catch {
-        // A frozen or accessor-guarded instance must degrade to "not applied".
-        return false
-      }
-    },
-  }
-}
-
 /** Observe the live selection; `undefined` when nothing can be observed. */
 function readView(deps: WebSearchSelectionDeps): SelectionView | undefined {
   const settings = deps.settings()
@@ -259,13 +215,7 @@ function readView(deps: WebSearchSelectionDeps): SelectionView | undefined {
     if (current !== undefined && typeof current !== 'string') return undefined
     return { configured: current, pinned: undefined, base: undefined, user: {}, persistent: false }
   }
-  // PRE-rc.2 engines carry no volatile reference at all — not even a settings row
-  // for `web`. There the selection is still the private instance field, and the
-  // user layer is unreadable, so a foreign pin is invisible and this seam
-  // degrades to the semantics shipped before rc.2.
-  const legacy = legacySearchField(deps.web)
-  if (legacy === undefined) return undefined
-  return { configured: legacy.read(), pinned: undefined, base: undefined, user: {}, persistent: false }
+  return undefined
 }
 
 /**
@@ -283,18 +233,6 @@ function readView(deps: WebSearchSelectionDeps): SelectionView | undefined {
  * and the one the shipped web-search settings page uses, so this plugin takes
  * it first and falls back to the reference only when settings is unavailable or
  * refuses (see `volatileWrite`).
- *
- * ## Two engine shapes
- *
- * Everything above describes an rc.2+ runtime, where the selection is a
- * reference. PRE-rc.2 engines (0.2.0-rc.2 and the 0.2.1 alphas) have neither
- * that reference nor a settings row for `web`: there the selection is the
- * private instance field `searchProviderId`, memory-only by nature. Those
- * engines therefore run the degraded path BY CONSTRUCTION — no profile write
- * exists for it and the user layer is unreadable, so a foreign pin cannot be
- * seen and the takeover/restore semantics are the ones this plugin shipped
- * before rc.2: remember the displaced backend, hand back only what we took. The
- * shape is resolved per observation, so one build serves both.
  *
  * ## Two writers, one field
  *
@@ -334,14 +272,11 @@ export function createCommandCodeSearchSelection(deps: WebSearchSelectionDeps): 
   /**
    * Commit the selection in memory; the last resort before giving up.
    *
-   * The volatile reference is tried first because on an rc.2+ runtime that is
-   * what `search()` reads. A PRE-rc.2 runtime carries no reference at all, and
-   * there the private instance field IS the seam — the fallback is a different
-   * engine shape, not a second-best copy of the same write.
+   * The volatile reference is what `search()` reads on every supported engine
+   * (`engines.dsh` starts at 0.2.1-rc.2), so it is the only in-memory seam.
    */
   const memoryWrite = (value: string | undefined): boolean => {
     if (volatileWrite(searchProviderRef(deps.web), value)) return true
-    if (legacySearchField(deps.web)?.write(value) === true) return true
     warn('llm-commandcode: web search selection could not be applied (settings refused the write and the running web runtime is not writable); the provider stays registered but unselected')
     return false
   }
@@ -455,8 +390,8 @@ export function createCommandCodeSearchSelection(deps: WebSearchSelectionDeps): 
       state.foreign = undefined
       if (view.configured === COMMANDCODE_SEARCH_PROVIDER_ID) {
         // Already at the target. With a readable user layer, ownership is decided
-        // by whether that layer carries our id. Without one — a PRE-rc.2 engine,
-        // or a host that serves no settings — that test cannot be made at all,
+        // by whether that layer carries our id. Without one — a host that serves
+        // no settings for `web` — that test cannot be made at all,
         // and a re-apply finding our own id is OURS: a config reload re-runs this
         // effect while the toggle stays on, so dropping ownership here would make
         // the later release leave the displaced backend behind forever.
