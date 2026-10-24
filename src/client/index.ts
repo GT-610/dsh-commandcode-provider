@@ -404,6 +404,9 @@ function applyClientSurfaces(
     discard: () => controller.discard(),
     refreshCredentials: () => void controller.refreshCredentials(),
     refreshUsage: () => void usageController.refresh(),
+    // First paint only: nobody asked, so it may coalesce with a read another
+    // surface just made. The button above never coalesces.
+    refreshUsageAuto: () => void usageController.refresh({ auto: true }),
     ...(typeof (ctx.get('layout') as LayoutSelectionSeam | undefined)?.selectPanel === 'function' ? { openAnalytics } : {}),
     beginLogin: (targetRef?: string) => void loginController.begin(targetRef),
     cancelLogin: () => void loginController.cancel(),

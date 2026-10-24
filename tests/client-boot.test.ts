@@ -332,6 +332,19 @@ test('设置页可直接打开模型分析，未打开时不扫描历史，钩�
   assert.equal(face.openAnalytics, undefined)
 })
 
+test('设置页首屏自动读取走 auto 路径，刷新按钮走显式路径', async () => {
+  // 账户卡片首屏那次读取不是用户点的：面板、卡片、重挂载都可能在同一秒里各问一次
+  // 同一个账号的同一份报告，所以它必须带上 auto 以便合并。而点击「刷新」是用户的
+  // 明确要求，读到的必须是新的，不能走合并。
+  const { registered } = await boot()
+  const face = registered.get('commandcode')![0]!.inject!() as {
+    refreshUsage(): void
+    refreshUsageAuto(): void
+  }
+  assert.equal(typeof face.refreshUsageAuto, 'function', '首屏自动路径必须存在')
+  assert.equal(typeof face.refreshUsage, 'function')
+})
+
 test('app registers the settings page and Models provider card when remote.credentials is mounted', async () => {
   const { registered } = await boot()
 

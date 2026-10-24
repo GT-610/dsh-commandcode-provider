@@ -213,10 +213,14 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
     a root `$ref` is inlined from its local `$defs`/`definitions`; an `allOf`/`anyOf`/`oneOf` root is
     flattened (branch properties unioned, `required` kept only where every alternative demands it); anything
     else degrades to a permissive free-form object, since a refused request helps no one. Only the root is
-    touched and every path returns a copy (the harness may deep-freeze tool schemas), and the walk is
-    depth-bounded so a self-referential JS schema cannot spin. `toolParametersSchema()` is applied at all
-    three call sites, so the CLI `input_schema`, the OpenAI `function.parameters` and the Messages
-    `input_schema` cannot drift apart.
+    touched; the object-root fast path returns the caller's own object (the harness may deep-freeze tool
+    schemas, and callers rely on that identity), while everything the function CONSTRUCTS is a fresh object.
+    The walk is depth-bounded so a self-referential JS schema cannot spin. The depth-0 result is memoized
+    per `parameters` object in a `WeakMap`, because every transport rebuilds its tool list on every attempt:
+    a rotation, a protocol fallback or a downshift re-walks the same handful of schemas for an answer that
+    cannot have changed. Harness tool objects are stable for the life of a turn, so identity is an exact key.
+    `toolParametersSchema()` is applied at all three call sites, so the CLI `input_schema`, the OpenAI
+    `function.parameters` and the Messages `input_schema` cannot drift apart.
   - Image parts on `/alpha/generate` use the official CLI's FINAL `toWireMessages()` shape: `{ type:
     'image', image: 'data:<mime>;base64,...', mimeType: '<mime>' }`. The `{ type: 'image', source: { type:
     'base64', media_type, data } }` shape is an internal CLI input block, not what it posts. OpenAI
@@ -278,11 +282,18 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
     dozens of screenshots) used to cross the cap once and then fail EVERY later request on this route with
     HTTP 413, while the same conversation worked on another provider. `stream()` therefore builds every
     body from a PROJECTED history, never the raw one, and the offload set is a DURABLE session fact:
-    `withSurfaceOffload()` renders the surface's `offloaded` marks through the engine's
-    `projectOffloadedImages` (so an evicted image can never be re-sent as pixels) and an over-budget history
-    FAILS with `IMAGE_OFFLOAD_REQUIRED` + the count from `requiredImageOffload`, which the default
+    `projectSurfaceBudget()` renders the surface's `offloaded` marks through the engine's
+    `projectOffloadedImages` (so an evicted image can never be re-sent as pixels) and counts what the byte
+    budget still needs; `withSurfaceOffload()` is the one-shot form (byte budget + CLI cache gate) used by
+    the 413 downshift and the protocol fallback, and an over-budget history FAILS with
+    `IMAGE_OFFLOAD_REQUIRED` + the count from `requiredImageOffload`, which the default
     `dsh-compaction-image-offload` plugin records as one `image/offload` event and retries — the omission
-    then survives restore and fork, and the token meter stops counting evicted images as context. Those
+    then survives restore and fork, and the token meter stops counting evicted images as context. On the
+    stream path the accounting and the throw are deliberately SEPARATE: the count runs before any I/O (a
+    history that must commit an offload costs neither a credential round trip nor an image read), but the
+    ONE error (`max(byte budget, CLI cache gate)`) is raised only after the credential and the real
+    transport are known — a request that cannot authenticate must report `MISSING_CREDENTIAL` instead of
+    first making the host offload images irreversibly. Those
     three symbols are STATIC imports of `@deepseek-ai/dsh-llm` (they are the reason the peer range is pinned
     so tightly: a named import of an absent export is a link-time failure that takes the whole plugin down,
     issue #43). `REQUEST_IMAGE_BUDGETS` is a two-rung ladder: rung 0 is the standing budget (32 MiB base64 /

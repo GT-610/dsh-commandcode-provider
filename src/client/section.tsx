@@ -163,6 +163,12 @@ export interface CommandCodeSettingsProps {
   save(): void
   discard(): void
   refreshUsage(): void
+  /**
+   * The automatic half: first paint only. Nobody clicked anything, so this may
+   * coalesce with a read another surface just made; efreshUsage above is the
+   * user's own request and always goes to the wire.
+   */
+  refreshUsageAuto(): void
   openAnalytics?(): void
   refreshCredentials(): void
   beginLogin(targetRef?: string): void
@@ -997,7 +1003,7 @@ interface FormCardProps {
 }
 
 /** Whether a group is open, and how to flip it; owned by the page (./group-fold.ts). */
-interface FoldProps {
+export interface FoldProps {
   expanded: boolean
   onToggle(): void
 }
@@ -2150,8 +2156,13 @@ function AddAccountPanel({ state, disabled, t, enrollment, snapshot, onClose }: 
  * The unified account card: every account the pool rotates through, one row
  * each, with its status and quota inline — so one account's facts no longer
  * have to be cross-read across separate surfaces.
+ *
+ * Exported for the render test (`tests/accounts-card-render.test.ts`) that pins
+ * the first-paint auto-refresh wiring against a real React tree: the page mounts
+ * this card, and a test that only checks the injected function exists cannot see
+ * the card reaching for it.
  */
-function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, openAnalytics, createEnrollment, expanded, onToggle }: FoldProps & {
+export function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, onRefreshAuto, openAnalytics, createEnrollment, expanded, onToggle }: FoldProps & {
   t: Translate<SettingsCommandCodeKey>
   state: SettingsPageState
   usage: UsagePageState
@@ -2159,6 +2170,8 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
   disabled: boolean
   actions: AccountActions
   onRefresh(): void
+  /** First-paint read; may coalesce. The refresh button above never does. */
+  onRefreshAuto(): void
   /** Opens the model-usage dashboard. Absent when the Host exposes no panel seam. */
   openAnalytics?: (() => void) | undefined
   createEnrollment(): AccountEnrollmentController
@@ -2172,8 +2185,8 @@ function AccountsCard({ t, state, usage, login, disabled, actions, onRefresh, op
   // Ask the Host on first paint: CLI auth and composition keys are not
   // represented by browser credential references.
   useEffect(() => {
-    if (shouldRefresh) onRefresh()
-  }, [shouldRefresh, onRefresh])
+    if (shouldRefresh) onRefreshAuto()
+  }, [shouldRefresh, onRefreshAuto])
   const rows = accountRows(state, usage, t).filter((row) => row.ref === undefined || !state.accountEnrollmentRefs.includes(row.ref))
   const multi = rows.length > 1
   const pinnedRow = rows.find((row) => row.id === state.activeAccount)
@@ -2600,6 +2613,7 @@ export function CommandCodeSettingsPage(props: CommandCodeSettingsProps) {
         disabled={disabled}
         actions={actions}
         onRefresh={props.refreshUsage}
+        onRefreshAuto={props.refreshUsageAuto}
         openAnalytics={props.openAnalytics}
         createEnrollment={props.createEnrollment}
         {...foldProps('accounts')}

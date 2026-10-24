@@ -49,7 +49,7 @@ import {
 } from '../src/capabilities.ts'
 import type { CommandCodeAdapterDeps, CommandCodeConnectionOptions, SurfaceImagePolicy } from '../src/adapter.ts'
 import type { ContentBlock, GenerateOptions, Message, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { MessageId, ToolCallId, ReasoningEffortId, type LlmError } from '@deepseek-ai/dsh-llm'
+import { MessageId, ToolCallId, ReasoningEffortId, LlmError } from '@deepseek-ai/dsh-llm'
 import type { RequestTimingSummary } from '../src/request-timing.ts'
 import type {
   AttachmentStore,
@@ -4066,6 +4066,43 @@ test('the Messages body carries adaptive thinking, output_config.effort and Anth
  * whose `@earendil-works/pi-ai` `anthropic-messages` transport marks exactly
  * these three positions on the same endpoint.
  */
+test('同一份工具 schema 只归一化一次，跨轮次重建复用结果', async () => {
+  // 每次尝试都会重建工具列表，而账号轮换或协议回退会把同一批工具再走一遍；
+  // 根节点归一化的答案不会因为问了第二次而改变，所以按 parameters 的对象身份
+  // 记忆化 —— 来自宿主的工具对象在整个回合里是稳定的，identity 就是精确的键。
+  //
+  // 计数放在 `type` 的 getter 上：归一化必须读它才能判断根节点类型，
+  // 而取值的次数正是「归一化走了几遍」的可观测量。
+  let reads = 0
+  const parameters = {
+    get type(): undefined { reads++; return undefined },
+    properties: { value: { type: 'string' } },
+  }
+  let calls = 0
+  const bodies: Record<string, unknown>[] = []
+  const adapter = makeAdapter({
+    rotateApiKey: async () => 'second-key',
+    fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return ++calls === 1 ? new Response('rate limited', { status: 429 }) : new Response(FINISH_STREAM)
+    }) as typeof fetch,
+  })
+  const tools = [{ name: 'tool', description: 'test', parameters }]
+  await collect(adapter.stream({ provider: 'commandcode', model: 'm', messages: [userMessage('hi')], tools }))
+  const afterFirst = reads
+  assert.ok(afterFirst > 0, '首次调用必须真的归一化')
+  // 第二次调用重建了工具列表、也经历了一次账号轮换（另一份正文），但同一份
+  // schema 已经归一化过，不该再被读一遍。
+  await collect(adapter.stream({ provider: 'commandcode', model: 'm', messages: [userMessage('hi')], tools }))
+  assert.equal(calls, 3)
+  assert.equal(reads, afterFirst, '同一份 schema 的归一化结果必须复用')
+  // 复用不等于跳过：每一次尝试的线缆上都仍是归一化后的根节点。
+  for (const body of bodies) {
+    // CLI 把工具放在 `params` 里，Provider API 放在顶层。
+    const params = (body.params ?? body) as { tools?: Array<{ input_schema: { type: string } }> }
+    assert.equal(params.tools?.[0]?.input_schema.type, 'object', '归一化结果必须仍然出现在线缆上')
+  }
+})
 test('the Messages body marks the last tool, not an earlier one', async () => {
   const { adapter, sent } = messagesAdapter(() => messagesStream('hi'))
   await collect(adapter.stream({
@@ -5887,6 +5924,43 @@ test('listModels() parses the catalog and marks input as text-only', async () =>
   assert.deepEqual(models[0]!.inputModalities, ['text'])
 })
 
+test('listModels() 目录已在内存时不再等一次联网刷新', async (t) => {
+  // 选择器与设置页的过滤编辑器都只是把目录画出来：本进程手里已经有这些行时，
+  // 还让这次打开等一次刷新，纯粹是延迟 —— 行刚刚还是好的，刷新留给下次打开。
+  // 进程首次加载则必须照旧等联网，否则没有诚实的行可画。
+  const originalNow = Date.now
+  let now = originalNow()
+  Date.now = () => now
+  t.after(() => { Date.now = originalNow })
+  let refreshes = 0
+  let parked = false
+  const catalog = (id: string) => new Response(JSON.stringify({
+    object: 'list', data: [{ id, name: id, context_length: 1000, max_output_tokens: 500 }],
+  }))
+  const adapter = makeAdapter({
+    fetchImpl: (async (input: RequestInfo | URL) => {
+      if (!String(input).endsWith('/models')) return catalog('unexpected')
+      refreshes++
+      if (!parked) return catalog(`model-${refreshes}`)
+      // 后台刷新明显晚一步：若本次调用蠢到去等它，拿到的就是新行而不是旧行，
+      // 断言会直接失败，而不是靠超时。
+      await new Promise<void>((resolve) => setTimeout(resolve, 50))
+      return catalog(`model-${refreshes}`)
+    }) as typeof fetch,
+  })
+  // 冷进程：没有可画的行，必须等这一次联网。
+  assert.equal((await adapter.listModels('commandcode', { unfiltered: true }))[0]?.id, 'model-1')
+  assert.equal(refreshes, 1)
+  // 目录仍在有效期内：这次调用不产生任何刷新。
+  assert.equal((await adapter.listModels('commandcode', { unfiltered: true }))[0]?.id, 'model-1')
+  assert.equal(refreshes, 1)
+  // 目录过期，且网关此刻不再回包：本次打开必须拿着旧行立刻返回，刷新挂在后台。
+  now += 5 * 60_000 + 1
+  parked = true
+  const listed = await adapter.listModels('commandcode', { unfiltered: true })
+  assert.equal(listed[0]?.id, 'model-1', '过期目录也先画出来，不能等后台刷新')
+  assert.equal(refreshes, 2, '后台仍要发起刷新，好让下次打开拿到新行')
+})
 test('listModels() falls back to the on-disk cache when the fetch fails', async () => {
   const cachePath = `/tmp/cc-test-cache-${process.pid}.json`
   const { writeFileSync, rmSync } = await import('node:fs')
@@ -7455,6 +7529,51 @@ test('getUsage() 固定组织范围并等订阅账期，再读取官方汇总', 
   assert.equal(report.usage?.totalCount, 7)
 })
 
+test('用量卡片与选择器共享同一份账户事实，但用量汇总必须每次重读', async () => {
+  // 设置卡片的账户区与选择器的套餐过滤读的是同一批端点、同一个账号：whoami 一次，
+  // 再并行 credits + subscriptions 一次。各自独立读等于同一份答案付两遍钱，而卡片
+  // 还在定时刷新，于是选择器反复为它早就有的行付出往返。
+  //
+  // 但 usage/summary 不同：那是用户正盯着的数字，卡片旁边还写着读取时间，绝不能
+  // 拿一次早先的响应回放。
+  const calls: Array<{ path: string; since: string | null }> = []
+  let usageReads = 0
+  const adapter = makeAdapter({ fetchImpl: (async (input) => {
+    const url = new URL(String(input))
+    calls.push({ path: url.pathname, since: url.searchParams.get('since') })
+    if (url.pathname === '/alpha/whoami') return Response.json({ user: { id: 'u1' }, org: { id: 'org-1' } })
+    if (url.pathname === '/alpha/billing/subscriptions') {
+      return Response.json({ data: { planId: 'individual-go', status: 'active', currentPeriodStart: 1000 } })
+    }
+    if (url.pathname === '/alpha/billing/credits') {
+      return Response.json({ credits: { monthlyCredits: 5, purchasedCredits: 0, freeCredits: 0 } })
+    }
+    assert.equal(url.pathname, '/alpha/usage/summary')
+    // 每次都得是一次真实读取：数字变化必须能被看见。
+    return Response.json({ totalCount: ++usageReads })
+  }) as typeof fetch })
+  const first = await adapter.getUsage('user_test_key')
+  assert.equal(first.usage?.totalCount, 1)
+  assert.equal(first.plan?.name, 'Go')
+  const afterCard = calls.length
+  assert.equal(afterCard, 4)
+  assert.deepEqual(calls.map((call) => call.path).sort(), [
+    '/alpha/billing/credits', '/alpha/billing/subscriptions', '/alpha/usage/summary', '/alpha/whoami',
+  ])
+
+  // 选择器的套餐过滤：卡片刚读过的身份与订阅事实直接复用。
+  await adapter.listModels('commandcode')
+  const added = calls.slice(afterCard).map((call) => call.path)
+  assert.deepEqual(added, ['/provider/v1/models', '/alpha/billing/credits'],
+    'whoami 与 subscriptions 必须复用卡片那一份；credits 的 URL 带不带 orgId 取决于调用方，不是同一份记录')
+
+  // 卡片再刷新：身份与套餐事实可以复用，用量汇总必须重新发出。
+  const second = await adapter.getUsage('user_test_key')
+  assert.equal(second.usage?.totalCount, 2, '用量汇总不能回放上一次的响应')
+  const usageCalls = calls.filter((call) => call.path === '/alpha/usage/summary')
+  assert.equal(usageCalls.length, 2)
+})
+
 test('getUsage() 个人账号使用毫秒账期，不附带组织参数或重算自然月', async () => {
   const start = Date.parse('2026-09-19T10:15:00Z')
   const adapter = makeAdapter({ fetchImpl: (async input => {
@@ -8047,6 +8166,43 @@ test('concurrent sessions keep independent header-timeout streaks', async () => 
   assert.equal(sessionBSecond.code, 'TIMEOUT', 'session-b is unaffected by session-a escalating, and is only on its 2nd timeout')
 })
 
+test('超时定级复用已序列化的正文，不再为算指纹重新遍历一遍', async () => {
+  // 指纹只回答「这是不是刚刚超时的同一份载荷」，而实发字符串就是逐字节准确的
+  // 答案。正文已经序列化过一次，超时判定不该为了算第二个意见再走一遍整棵 body
+  // ——带图历史可达数 MB，而超时恰恰是最常重复的路径。
+  //
+  // `toJSON` 在这里既计数又保持字节不变：同一个值被遍历几次，线缆字节都相同，
+  // 所以升级行为必须与从前一致；变化的只有遍历次数。
+  let passes = 0
+  const constant = { toJSON: () => { passes++; return { value: 1 } } }
+  const adapter = makeAdapter({
+    options: () => ({
+      apiBase: 'https://api.commandcode.ai', workingDir: '/tmp/project',
+      modelsCachePath: '/tmp/cc-models-cache.json',
+      requestTimeoutMs: 30, streamIdleTimeoutMs: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+      protocol: 'openai' as const,
+    }),
+    fetchImpl: neverSettlingFetch(),
+  })
+  const failure = async () => {
+    try {
+      for await (const _ of adapter.stream({
+        provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash',
+        messages: [userMessage('hi')],
+        tools: [{ name: 'tool', description: 't', parameters: { type: 'object', properties: { constant } } }],
+      })) { /* drain */ }
+    } catch (error) {
+      const coded = error as { code?: string }
+      return String(coded.code)
+    }
+    throw new Error('expected the generate to fail')
+  }
+  assert.equal(await failure(), 'TIMEOUT')
+  assert.equal(passes, 1, '一次超时只应遍历一次正文')
+  assert.equal(await failure(), 'TIMEOUT')
+  assert.equal(await failure(), 'PROVIDER_HTTP_ERROR', '字节相同就必须升级，遍历次数不该改变语义')
+  assert.equal(passes, 3, '每次调用只序列化一次，超时定级复用那一份')
+})
 test('a session-less call keeps the old single-slot streak so it still escalates', async () => {
   // openai protocol, not cli: the CLI body embeds a threadId that falls back
   // to a fresh randomUUID() per call with no sessionId (cliThreadId()), which
@@ -8148,6 +8304,50 @@ test('同次请求并行读取图片不超过四张，重复图片及协议降�
   assert.equal(calls, 2)
 })
 
+test('凭据解析与图片读取并行，不再一次接一次地排队', async () => {
+  // 两个等待互不依赖（正文从不携带密钥，健康账号池的解析也只读内存），所以
+  // 它们必须重叠：先解析凭据再读图，等于把两者的等待时间相加。这条断言用
+  // 「凭据尚未返回时图片读取已经开始」把重叠钉死，而不依赖墙钟时间。
+  const refs = Array.from({ length: 2 }, (_, i) => ({ ...imageRef(), attachmentId: AttachmentId(`parallel-image-${i}`) }))
+  const attachments = fakeAttachments(Object.fromEntries(refs.map((ref) => [ref.attachmentId, pngBytes])))
+  const original = attachments.readImageRequest.bind(attachments)
+  let releaseImage!: () => void
+  const imageGate = new Promise<void>((resolve) => { releaseImage = resolve })
+  let reads = 0
+  attachments.readImageRequest = async (ref, target) => {
+    reads++
+    await imageGate
+    return original(ref, target)
+  }
+  let releaseKey!: () => void
+  const keyGate = new Promise<void>((resolve) => { releaseKey = resolve })
+  let keyEntered!: () => void
+  const keyRequested = new Promise<void>((resolve) => { keyEntered = resolve })
+  const bodies: Record<string, unknown>[] = []
+  const adapter = makeAdapter({
+    options: () => OPENAI_OPTIONS(),
+    resolveAttachments: () => attachments,
+    resolveApiKey: async () => { keyEntered(); await keyGate; return 'user_test_key' },
+    fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(settlementFrames('openai').join(''))
+    }) as typeof fetch,
+  })
+  let settled = false
+  const running = collect(adapter.stream({ provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash',
+    messages: [{ id: messageId(), role: 'user', source: { kind: 'user' },
+      content: refs.map((attachment) => ({ type: 'image' as const, attachment })) }],
+  })).finally(() => { settled = true })
+  await keyRequested
+  for (let turn = 0; turn < 20 && reads === 0; turn++) await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.ok(reads > 0, '凭据仍在等待时图片读取就应已经开始')
+  assert.equal(settled, false)
+  releaseKey()
+  releaseImage()
+  await running
+  assert.equal(bodies.length, 1)
+  assert.equal((bodies[0]?.messages as unknown[]).length, 1)
+})
 test('目录刷新合并并发等待，单个调用取消不会影响其他调用', async (t) => {
   const path = join(tmpdir(), `cc-catalog-concurrent-${process.pid}.json`)
   t.after(() => rmSync(path, { force: true }))
@@ -8217,4 +8417,53 @@ test('every new-arrival model carries an output ceiling or is left to runtime le
   // map emptied. Muse Wonder takes over the assertion: 131072 against a
   // 1 048 576-token window, so the table is still demonstrably not the window.
   assert.ok(MODEL_OUTPUT_TOKEN_LIMITS.get('meta/muse-wonder-1.0')! < 1_048_576)
+})
+
+// ---------------------------------------------------------------------------
+// 图片预算门与凭据解析的顺序（PR #98 审查修复 R1/R2）
+//
+// 预算门只能在凭据与真实通道落定之后抛：否则一次根本发不出去的请求会先让
+// 宿主把最老的图片持久化卸载（不可逆），然后才暴露「没有凭据」。预算门与
+// 缓存门还必须一次算全、一次抛出，否则宿主会多跑一轮卸载往返，并把
+// cache 溢出报成 budget。
+// ---------------------------------------------------------------------------
+
+/** 61 张 1 MiB 的图：数量超 60、base64 字节超 32 MiB，预算门必触发。 */
+function oversizedImageHistory() {
+  return imageHistory(Array.from({ length: 61 }, () => 1024 * 1024))
+}
+
+test('凭据缺失时图片预算门不抢跑：先报 MISSING_CREDENTIAL，不发请求', async () => {
+  const { messages, images } = oversizedImageHistory()
+  let fetched = false
+  const adapter = makeAdapter({
+    resolveApiKey: async () => { throw new LlmError('未配置 Command Code API 密钥', 'MISSING_CREDENTIAL') },
+    resolveAttachments: () => fakeAttachments(images),
+    fetchImpl: (async () => { fetched = true; return okStream('openai') }) as unknown as typeof fetch,
+    options: OPENAI_OPTIONS,
+  })
+  let error: unknown
+  try {
+    await collect(adapter.stream({
+      provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash', messages,
+    }))
+  } catch (thrown) { error = thrown }
+  assert.equal((error as { code?: string }).code, 'MISSING_CREDENTIAL',
+    '凭据错误必须先于图片错误：否则宿主的持久化卸载会先发生')
+  assert.equal(fetched, false, '凭据缺失的请求不应走到网络')
+})
+
+test('预算与缓存门同时超限只报一次，且报两者较大的缺数', async () => {
+  const { messages, images } = oversizedImageHistory()
+  // 让这 61 张图都落在「当前模型已看过」的区间里：缓存门 count = 61 > 预算门。
+  const answered: Message[] = [...messages, {
+    id: messageId(), role: 'assistant', content: [{ type: 'text', text: '都看过了' }],
+    source: { kind: 'model', provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash' },
+  }]
+  const result = await runAttempts('cli', answered, images, undefined, undefined, true)
+  assert.equal(result.bodies.length, 0, '门未通过前不得发出任何请求')
+  assert.equal((result.error as { code?: string }).code, 'IMAGE_OFFLOAD_REQUIRED')
+  // 旧实现先报预算门、重试后才报缓存门 61；一次算全时直接报两者的最大值 61。
+  assert.match((result.error as { message?: string }).message ?? '', /61 already-seen oldest image/
+  )
 })

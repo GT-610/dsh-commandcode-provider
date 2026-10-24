@@ -108,6 +108,24 @@ export interface UsagePageState {
 const IDLE: UsagePageState = { status: 'idle', report: undefined, error: undefined, fetchedAt: undefined }
 
 /**
+ * How long an AUTO refresh may reuse the result of one already in flight or
+ * just finished.
+ *
+ * One report costs four upstream calls, and several surfaces ask for it without
+ * the user asking for anything: the settings page's account card and the panel
+ * both fetch on first paint, and a remount or a re-render can run those effects
+ * again seconds apart. That is the same report about the same account — paying
+ * for it twice buys nothing.
+ *
+ * The window is deliberately tiny. It exists to collapse a duplicate, not to
+ * serve stale data: anything older than this is fetched again, and `fetchedAt`
+ * therefore still names the moment these numbers were actually read. An
+ * EXPLICIT refresh (the refresh button, a save, a credential change) never
+ * consults it at all — the user asked, so the answer must be new.
+ */
+export const USAGE_AUTO_REFRESH_COALESCE_MS = 5_000
+
+/**
  * Controller bridging the `commandcode/report` Remote onto the card. Public
  * API mirrors {@link CommandCodeSettingsController}: `state()` projections,
  * `subscribe`, and one `refresh()` action.
@@ -119,6 +137,8 @@ export class CommandCodeUsageController {
   private generation = 0
   private inFlight = false
   private disposed = false
+  /** When the last fetch SETTLED successfully, for {@link USAGE_AUTO_REFRESH_COALESCE_MS}. */
+  private settledAt: number | undefined
 
   constructor(remote: UsageRemote) {
     this.remote = remote
@@ -145,9 +165,21 @@ export class CommandCodeUsageController {
   /**
    * Fetch (or refetch) the report. Concurrent refreshes collapse onto one
    * request; a superseded fetch's late result is dropped, never published.
+   *
+   * `auto` marks a refresh nobody asked for — a surface appearing, or the
+   * background tick. Those also reuse a result fetched within
+   * {@link USAGE_AUTO_REFRESH_COALESCE_MS}, because two surfaces mounting a
+   * second apart are asking the same question. Every other caller is a user
+   * action and always goes to the wire.
    */
-  async refresh(): Promise<void> {
+  async refresh(options?: { auto?: boolean }): Promise<void> {
     if (this.disposed || this.inFlight) return
+    if (
+      options?.auto === true
+      && this.current.status === 'ready'
+      && this.settledAt !== undefined
+      && Date.now() - this.settledAt < USAGE_AUTO_REFRESH_COALESCE_MS
+    ) return
     const generation = ++this.generation
     this.inFlight = true
     this.current = { ...this.current, status: 'loading', error: undefined }
@@ -156,7 +188,9 @@ export class CommandCodeUsageController {
       const response = await this.remote.report()
       if (this.disposed || generation !== this.generation) return
       if (response.ok) {
-        this.current = { status: 'ready', report: response.value, error: undefined, fetchedAt: Date.now() }
+        const fetchedAt = Date.now()
+        this.settledAt = fetchedAt
+        this.current = { status: 'ready', report: response.value, error: undefined, fetchedAt }
       } else {
         this.current = { ...this.current, status: 'error', error: response.error.message }
       }

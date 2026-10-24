@@ -116,6 +116,17 @@ const MODELS_TIMEOUT_MS = 10_000
 /** How long the picker's plan-filter billing facts stay cached before refetching. */
 export const BILLING_ACCESS_TTL_MS = 5 * 60_000
 /**
+ * How long the raw account facts captured by one usage-report run stay usable
+ * for the picker's advisory plan filter.
+ *
+ * This is much shorter than {@link BILLING_ACCESS_TTL_MS} because it only ever
+ * removes a DUPLICATE read: the picker and the settings card ask the same three
+ * endpoints about the same key, and whichever ran last already paid for them.
+ * Anything older than this window is simply fetched again — the filter is
+ * fail-open advisory data, so a miss costs one round trip and nothing else.
+ */
+const ACCOUNT_FACTS_TTL_MS = 30_000
+/**
  * How long a learned CLI-only protocol preference stays cached per account.
  * After this TTL a request may probe Provider API again, so an upgraded Go
  * account can recover without a restart.
@@ -223,8 +234,13 @@ function fingerprintValue(value: unknown): ValueFingerprint {
   }
   return {
     bytes: Buffer.byteLength(serialized),
-    sha256: createHash('sha256').update(serialized).digest('hex'),
+    sha256: sha256Hex(serialized),
   }
+}
+
+/** Digest of already-serialized text: no second stringify, no retained copy. */
+function sha256Hex(serialized: string): string {
+  return createHash('sha256').update(serialized).digest('hex')
 }
 
 /**
@@ -385,6 +401,17 @@ function headersTimeoutError(input: {
 const SCHEMA_NORMALIZE_MAX_DEPTH = 4
 
 /**
+ * Depth-0 normalization results, keyed by the caller's own `parameters` object.
+ *
+ * {@link toolParametersSchema} only ever reads the root, so a schema that has
+ * already been normalized returns the identical answer however many times it is
+ * asked. The tool list is rebuilt for EVERY attempt — a rotation or a protocol
+ * fallback rebuilds it again — and the objects come from the harness, so they
+ * stay identical for the life of a turn: identity is an exact key.
+ */
+const TOOL_SCHEMA_CACHE = new WeakMap<object, Record<string, unknown>>()
+
+/**
  * Whether a type-less node is object-shaped enough to be one with the type
  * declared: `properties`/`required`/`additionalProperties` only make sense on
  * an object, and a schema carrying them was meant to be one.
@@ -440,7 +467,7 @@ function mergeCombinatorBranches(
     const objectBranches: Record<string, unknown>[] = []
     for (const branch of branches) {
       if (!isRecord(branch)) continue
-      objectBranches.push(toolParametersSchema(branch, depth + 1))
+      objectBranches.push(normalizeToolParameters(branch, depth + 1))
     }
     if (objectBranches.length === 0) continue
     sawBranch = true
@@ -481,10 +508,33 @@ function mergeCombinatorBranches(
  * resolved/merged; anything else (an array/scalar root, or no schema at all)
  * degrades to a permissive free-form object, because a request the provider
  * refuses helps no one and the tool's own description is still in the prompt.
- * Only the root is touched and every path returns a copy: the harness may
- * deep-freeze the caller's schema.
+ *
+ * Only the ROOT is touched. The object-root fast path deliberately returns the
+ * caller's own object: an already-normalized schema is the common case, the
+ * function has always answered with that same identity, and callers rely on it
+ * to get the same frozen schema they handed in. Everything this function
+ * CONSTRUCTS is a fresh object, so no caller can mutate another's schema.
+ *
+ * The ROOT is memoized per `parameters` object, because every transport rebuilds
+ * its tool list on every attempt — on a rotating or downshifting request the
+ * same handful of tool schemas is walked four, five, six times for an answer
+ * that cannot have changed. The tool objects come from the harness and are
+ * stable for the life of a turn, so a WeakMap keyed on identity is exact: a
+ * genuinely different schema is a different object and misses. Nested
+ * `$ref`/combinator branches are reached through {@link normalizeToolParameters}
+ * and are not memoized; only the root is asked for on a hot path.
  */
-function toolParametersSchema(parameters: unknown, depth = 0): Record<string, unknown> {
+function toolParametersSchema(parameters: unknown): Record<string, unknown> {
+  if (!isRecord(parameters)) return normalizeToolParameters(parameters, 0)
+  const cached = TOOL_SCHEMA_CACHE.get(parameters)
+  if (cached !== undefined) return cached
+  const normalized = normalizeToolParameters(parameters, 0)
+  TOOL_SCHEMA_CACHE.set(parameters, normalized)
+  return normalized
+}
+
+/** Depth-0 normalization of {@link toolParametersSchema}; see its memo there. */
+function normalizeToolParameters(parameters: unknown, depth: number): Record<string, unknown> {
   if (!isRecord(parameters)) return { type: 'object', properties: {}, additionalProperties: true }
   if (parameters.type === 'object') return parameters
   // `["object", "null"]` is accepted by JSON Schema but not by the provider's
@@ -498,7 +548,7 @@ function toolParametersSchema(parameters: unknown, depth = 0): Record<string, un
       const target = resolveLocalRef(parameters, parameters.$ref)
       if (target !== undefined) {
         const { $ref: _ref, ...rest } = parameters
-        return toolParametersSchema({ ...target, ...rest }, depth + 1)
+        return normalizeToolParameters({ ...target, ...rest }, depth + 1)
       }
     }
     if (isObjectShaped(parameters)) return { ...parameters, type: 'object' }
@@ -884,10 +934,38 @@ function coreBudget(budget: RequestImageBudget): CoreImageBudget {
 const imageVersionBytes: ImageVersionBytes = (block) => block.attachment.bytes
 
 /**
+ * The accounting half of the image gate: project the surface's durable offload
+ * marks and count what the byte budget still needs — WITHOUT throwing.
+ *
+ * The throw has to wait until the credential is known. A request that cannot
+ * authenticate must not trigger a durable (irreversible) image offload before
+ * the caller learns the key is missing; keeping the count pure lets
+ * `streamAttempt()` run it before ANY I/O and report ONE error later, once the
+ * real transport is known.
+ */
+function projectSurfaceBudget(
+  options: GenerateOptions,
+  policy: SurfaceImagePolicy,
+  budget: RequestImageBudget,
+): { options: GenerateOptions; budgetMissing: number } {
+  const marked = policy.projectOffloadedImages(options.messages, (ref) => offloadedImageText(ref))
+  const messages = marked === options.messages ? options.messages : [...marked]
+  return {
+    options: messages === options.messages ? options : { ...options, messages },
+    budgetMissing: policy.requiredImageOffload(messages, coreBudget(budget), imageVersionBytes),
+  }
+}
+
+/**
  * Request options under one budget rung: the surface's durable marks become
  * placeholder text, and an over-budget history FAILS with the count to offload
  * instead of being evicted here. Throws rather than returning, so no caller can
  * accidentally send a body this route already knows is too large.
+ *
+ * This is the one-shot form (budget + cache in a single error) used by the 413
+ * downshift and the protocol fallback. `streamAttempt()`'s first pass uses
+ * {@link projectSurfaceBudget} instead, because there the throw must wait for
+ * the credential.
  *
  * The next rung is applied to the CURRENT projection, never to the raw history —
  * otherwise the 413 retry could reintroduce images the first rung had already
@@ -899,13 +977,11 @@ function withSurfaceOffload(
   budget: RequestImageBudget,
   cacheOffloadModel?: string,
 ): GenerateOptions {
-  const marked = policy.projectOffloadedImages(options.messages, (ref) => offloadedImageText(ref))
-  const messages = marked === options.messages ? options.messages : [...marked]
-  const budgetMissing = policy.requiredImageOffload(messages, coreBudget(budget), imageVersionBytes)
-  const cacheMissing = cacheOffloadModel === undefined ? 0 : seenImageOffloadCount(messages, cacheOffloadModel)
-  const missing = Math.max(budgetMissing, cacheMissing)
-  if (missing > 0) throw imageOffloadRequired(missing, cacheMissing > budgetMissing ? 'cache' : 'budget')
-  return messages === options.messages ? options : { ...options, messages }
+  const projected = projectSurfaceBudget(options, policy, budget)
+  const cacheMissing = cacheOffloadModel === undefined ? 0 : seenImageOffloadCount(projected.options.messages, cacheOffloadModel)
+  const missing = Math.max(projected.budgetMissing, cacheMissing)
+  if (missing > 0) throw imageOffloadRequired(missing, cacheMissing > projected.budgetMissing ? 'cache' : 'budget')
+  return projected.options
 }
 
 /**
@@ -2355,6 +2431,25 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
   // transience is intentional, persistence would serve stale tiers).
   private readonly billingAccess = new Map<string, { value: CommandCodeBillingAccess | undefined; at: number }>()
   private readonly billingAccessInflight = new Map<string, Promise<CommandCodeBillingAccess | undefined>>()
+  /**
+   * Successful account-endpoint responses, keyed by gateway + key + exact URL.
+   *
+   * The settings card and the picker's advisory plan filter ask the SAME three
+   * endpoints about the SAME account (`/alpha/whoami`, then credits and
+   * subscriptions in parallel). Here that is four round trips per surface for
+   * two answers — and the card refreshes on a timer, so the picker keeps paying
+   * for rows it already has. Sharing the raw responses removes the duplicate
+   * without either surface having to know about the other: whoever asks second
+   * within {@link ACCOUNT_FACTS_TTL_MS} reads the same record instead of the
+   * wire.
+   *
+   * Only SUCCESSFUL records are kept. A failure must be retried rather than
+   * replayed, or an endpoint that recovered a second ago would keep reporting
+   * yesterday's outage — and the usage report's per-endpoint `failures` and
+   * {@link classifyTotalFailure} verdict would describe a request this process
+   * never made.
+   */
+  private readonly accountJson = new Map<string, { record: Record<string, unknown>; at: number }>()
   // Protocol preference is per gateway and account: the Go plan is the only plan without
   // Provider API access, and that fact is independent of model. A negative
   // result (provider API rejected this key with upgrade_required) is cached so
@@ -2407,11 +2502,23 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     body: Record<string, unknown>,
     timeoutMs: number,
     sessionId: string | undefined,
+    sent?: string,
   ): unknown {
     const timedOut = error instanceof LlmError && error.code === 'TIMEOUT'
     if (!timedOut) return error
     const key = sessionId ?? GLOBAL_HEADER_TIMEOUT_KEY
-    const fingerprint = `${protocol}:${fingerprintValue(body).sha256}`
+    // The streak asks one question — "is this the SAME payload that just timed
+    // out?" — and the string that went on the wire answers it exactly, byte for
+    // byte. Re-stringifying `body` here would re-walk the entire request (MBs,
+    // on a history carrying images) just to render a second opinion on a body
+    // the caller already serialized, and it would answer about slightly
+    // DIFFERENT bytes whenever the surrogate sanitizer had removed something.
+    // `sent` is absent only when no serialized copy exists — a body that never
+    // reached the wire, or a failure before serialization — and there the
+    // object hash is the honest fallback.
+    const fingerprint = `${protocol}:${sent === undefined
+      ? fingerprintValue(body).sha256
+      : sha256Hex(sent)}`
     const previous = this.headerTimeoutStreaks.get(key)
     const count = previous?.fingerprint === fingerprint ? previous.count + 1 : 1
     if (previous === undefined) {
@@ -2524,7 +2631,27 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     opts?: { unfiltered?: boolean },
   ): Promise<readonly LlmModelInfo[]> {
     const connection = { ...this.deps.options() }
-    const catalog = await this.gatewayFacts.refresh(connection)
+    // The picker and the settings page's filter editor are read-only surfaces,
+    // and the list they draw is only ever a copy of what upstream published.
+    // Once this process HAS the rows, making the open wait on a network refresh
+    // is pure latency: the rows were good enough a moment ago and the refresh
+    // will be there for the next open. So a WARM source draws from memory and
+    // refreshes in the background; a source this process has never loaded still
+    // awaits the fetch, because there is nothing honest to draw and the filter
+    // editor needs the real list.
+    //
+    // The distinction is deliberately in-memory only (`loaded()`, not
+    // `snapshot()`): the on-disk copy carries no age check, so serving it as a
+    // first paint would show a catalog of unknown vintage.
+    const cached = this.gatewayFacts.loaded(connection)
+    const catalog = cached ?? await this.gatewayFacts.refresh(connection)
+    if (cached !== undefined) {
+      // `refresh()` returns from cache inside the TTL without any I/O, so the
+      // common path costs nothing, and an expired entry lands for the next
+      // open. Never awaited: the caller already has its rows, and `refresh()`
+      // degrades instead of throwing, so nothing can escape unhandled.
+      void this.gatewayFacts.refresh(connection).catch(() => undefined)
+    }
     const toInfo = (model: (typeof catalog)[number]) => {
       const vision = KNOWN_IMAGE_MODELS.has(model.id)
       return {
@@ -2660,19 +2787,34 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     }
   }
 
-  /** The headers every authenticated account endpoint shares. */
-  private async accountHeaders(apiKey?: string): Promise<Record<string, string>> {
+  /**
+   * Resolve and validate the key one account-endpoint call will use.
+   *
+   * Every account endpoint runs the chat path's own `assertUsableApiKey` check,
+   * or a key carrying a character no HTTP header can hold throws inside `fetch`
+   * BEFORE any I/O — once per endpoint — and the report reads as "the network is
+   * down". The credential reference is read structurally: it belongs to the
+   * host's resolved options, not to this adapter's connection type, and it only
+   * names the key in the rejection message.
+   *
+   * Separate from {@link accountHeadersFor} so a caller that also needs to key a
+   * cache by the same identity does not have to resolve the key twice.
+   */
+  private async usableAccountKey(apiKey?: string): Promise<string> {
     const connection = this.deps.options()
     const raw = apiKey ?? (await this.deps.resolveApiKey(connection))
-    // Every account endpoint runs the chat path's own `assertUsableApiKey`
-    // check, or a key carrying a character no HTTP header can hold throws
-    // inside `fetch` BEFORE any I/O — once per endpoint — and the report reads
-    // as "the network is down". The credential reference is read structurally:
-    // it belongs to the host's resolved options, not to this adapter's
-    // connection type, and it only names the key in the rejection message.
     const named = (connection as { apiKeyEnv?: unknown }).apiKeyEnv
     const ref = typeof named === 'string' && named !== '' ? named : 'the stored credential'
-    const key = assertUsableApiKey(raw, 'llm-commandcode', ref)
+    return assertUsableApiKey(raw, 'llm-commandcode', ref)
+  }
+
+  /** The headers every authenticated account endpoint shares. */
+  private async accountHeaders(apiKey?: string): Promise<Record<string, string>> {
+    return this.accountHeadersFor(await this.usableAccountKey(apiKey))
+  }
+
+  /** Headers for an already-validated key; see {@link usableAccountKey}. */
+  private accountHeadersFor(key: string): Record<string, string> {
     return {
       Authorization: `Bearer ${key}`,
       ...IDENTITY_ENCODING_HEADER,
@@ -2802,6 +2944,43 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
   }
 
   /**
+   * One account-endpoint GET, served from {@link accountJson} when `share` and
+   * the same URL answered successfully within {@link ACCOUNT_FACTS_TTL_MS}.
+   *
+   * `timeoutMs` is the CALLER's budget; a cache hit spends none of it. Failures
+   * are never cached, so this can only ever save a request that would have
+   * re-read an answer this process already had.
+   *
+   * `share: false` marks a VOLATILE endpoint — one whose answer is the number
+   * the user is actually looking at, and which must therefore never be replayed
+   * from an earlier request. The usage card's summary is exactly that: its
+   * headline counts and cost are the reason the card exists, and stamping a
+   * cached copy with the current time would misreport when they were read.
+   * Identity and billing facts are the opposite: a plan tier or an org id that
+   * is 30 s old is still the truth, and those are what the picker duplicates.
+   */
+  private async accountJsonGet(
+    apiBase: string,
+    apiKey: string,
+    path: string,
+    timeoutMs: number,
+    share = true,
+  ): Promise<{ status: number; record?: Record<string, unknown>; responseFailure?: string }> {
+    const cacheKey = JSON.stringify([apiBase, apiKey, path])
+    if (share) {
+      const hit = this.accountJson.get(cacheKey)
+      if (hit !== undefined && Date.now() - hit.at < ACCOUNT_FACTS_TTL_MS) {
+        return { status: 200, record: hit.record }
+      }
+    }
+    const answer = await this.fetchJson(`${apiBase}${path}`, this.accountHeadersFor(apiKey), timeoutMs)
+    if (share && answer.record !== undefined) {
+      this.accountJson.set(cacheKey, { record: answer.record, at: Date.now() })
+    }
+    return answer
+  }
+
+  /**
    * The billing facts behind the picker's plan filter, mirroring the CLI's
    * `createBilling` flow: whoami yields the org id, then the subscriptions
    * and credits endpoints answer in parallel. The plan id is honored only
@@ -2812,10 +2991,13 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
    */
   private async fetchBillingAccess(apiBase: string, apiKey: string): Promise<CommandCodeBillingAccess | undefined> {
     try {
-      const headers = await this.accountHeaders(apiKey)
+      // Validate once, then address the shared per-account records by the key
+      // that will actually travel: a usage-report run seconds ago may already
+      // have read all three endpoints about this same account.
+      const key = await this.usableAccountKey(apiKey)
       // Billing probe fails open silently: any non-record is "unknown".
       const getJson = async (path: string): Promise<Record<string, unknown> | undefined> =>
-        (await this.fetchJson(`${apiBase}${path}`, headers)).record
+        (await this.accountJsonGet(apiBase, key, path, MODELS_TIMEOUT_MS)).record
       const whoami = await getJson('/alpha/whoami')
       const orgData = whoami && isRecord(whoami.org) ? whoami.org : undefined
       const orgId = orgData === undefined ? undefined : stringValue(orgData.id)
@@ -2935,9 +3117,9 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
   async getUsage(apiKey?: string, capturedConnection?: C): Promise<CommandCodeUsageReport> {
     const connection = capturedConnection ?? { ...this.deps.options() }
     const base = connection.apiBase
-    let headers: Record<string, string>
+    let key: string
     try {
-      headers = await this.accountHeaders(apiKey)
+      key = await this.usableAccountKey(apiKey)
     } catch (error: unknown) {
       // An unusable key is a CREDENTIAL verdict, not a transport one. A
       // missing key still propagates (the caller renders the unconfigured
@@ -2953,12 +3135,18 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     // received a response. The former used to be counted as "network".
     const failed: UsageEndpointFailure[] = []
 
-    const getJson = async (path: string): Promise<Record<string, unknown> | undefined> => {
+    const getJson = async (path: string, share = true): Promise<Record<string, unknown> | undefined> => {
       try {
-        const { status, record, responseFailure } = await this.fetchJson(
-          `${base}${path}`,
-          headers,
+        // Identity and billing facts are shared with the picker's plan filter:
+        // whichever surface asked for this exact URL most recently already paid
+        // for it, and a 30 s old org id or plan tier is still the truth. The
+        // CARD's own budget is still the one a real fetch runs under.
+        const { status, record, responseFailure } = await this.accountJsonGet(
+          base,
+          key,
+          path,
           connection.requestTimeoutMs,
+          share,
         )
         if (record === undefined) {
           failures.push(`${path}: HTTP ${status}${responseFailure ? `；${responseFailure}` : ''}`)
@@ -2997,7 +3185,9 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     const validStart = periodStart > 0 && Number.isFinite(new Date(periodStart).getTime())
     // 保留上游时间的字符串/毫秒表示，仅编码查询值，不重算日期或时区。
     const since = validStart ? String(rawStart) : undefined
-    const usage = await getJson(scopedPath('/alpha/usage/summary', since))
+    // Not shared: these are the numbers on the card, and the timestamp beside
+    // them must describe when they were actually read.
+    const usage = await getJson(scopedPath('/alpha/usage/summary', since), false)
 
     // usage/summary -> totals.
     const totals = parseUsageTotals(usage)
@@ -3217,11 +3407,17 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
 
     // The model id reaches key resolution so hosts with model→account routing
     // rules can pick the account that covers this model.
-    const finishCredentials = timing.phase('credentials')
-    let apiKey: string
-    try { apiKey = await this.deps.resolveApiKey(connection, options.model) } finally { finishCredentials() }
-    options.signal?.throwIfAborted()
+    //
+    // 凭据解析与正文装配互不依赖：正文从不携带密钥，健康账号池的解析也只读内存。
+    // 两者的等待时间因此重叠，而不是相加 —— 图片读取与正文 JSON 装配（这部分在
+    // 带图请求里才是真正的开销）现在与账号池/凭据等待同时进行，线上字节不变。
+    //
+    // 通道无法提前选定：`protocolCache` 与套餐档位都按账号缓存，必须等密钥。
+    // 但 {@link resolveProtocol} 里与密钥无关的三支可以先算 —— 强制 cli、只有
+    // messages 端点服务的模型（Claude 家族），以及 Provider API 的默认值。
+    // 猜错只多一次重建（与既有的协议回退、账号轮换同价），猜对即直接复用。
     let maxTokens = Math.min(budget.max, learnedOutputLimit(connection.apiBase, options.model))
+    const builtMaxTokens = maxTokens
 
     const supported = KNOWN_EFFORTS[options.model]
     // 标题调用默认只有 64 个输出词元，先思考可能耗尽预算而没有正文（问题 #88）。
@@ -3250,23 +3446,19 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
       .filter(Boolean)
       .join('\n\n')
 
-    // Endpoint protocol: billing/cache may know Go plan -> CLI; unknown
-    // accounts default to the documented Provider Chat Completions surface
-    // (`resolveProtocol()` routes Claude to Messages on Provider API access).
-    let protocol: CommandCodeProtocol = this.resolveProtocol(connection, apiKey, options.model, modelEntry)
-    // 反代 messages 端点对本次账号的权限拒绝（issue #84）。只活在一次 stream()
-    // 调用里，并在最终错误文案中留痕：它描述的是这一条 Claude 链路，既不能
-    // 缓存成整个网关的协议结论，也不该覆盖 CLI 直连自己的失败原因。
-    let messagesPermissionRejection: string | undefined
     // Image budget (issue #37): the body is built from the PROJECTED history,
     // never the raw one. Rung 0 is the standing budget; a 413 below steps down
-    // the ladder. The session surface owns the offload set, so this throws
-    // `IMAGE_OFFLOAD_REQUIRED` when more images must go; the retry then
-    // arrives with the surface already updated.
-    let requestOptions = withSurfaceOffload(
-      options, this.surfaceOffload, REQUEST_IMAGE_BUDGETS[0]!,
-      connection.offloadSeenImagesForCache === true && protocol === 'cli' ? options.model : undefined,
-    )
+    // the ladder. The session surface owns the offload set, so an over-budget
+    // history fails with `IMAGE_OFFLOAD_REQUIRED`.
+    //
+    // This first pass is the ACCOUNTING half only: it runs before any I/O and
+    // deliberately does NOT throw. Throwing here would report an image problem
+    // before the credential is resolved, and the host reacts to that error by
+    // durably (irreversibly) offloading the oldest images — for a request that
+    // could never have been sent because its key is missing. The one error is
+    // raised below, once the credential and the real transport are known.
+    const projected = projectSurfaceBudget(options, this.surfaceOffload, REQUEST_IMAGE_BUDGETS[0]!)
+    let requestOptions = projected.options
     const buildBody = async (target: CommandCodeProtocol): Promise<Record<string, unknown>> => {
       const finishBody = timing.phase('body')
       try {
@@ -3291,7 +3483,70 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
       return built
       } finally { finishBody() }
     }
-    let body: Record<string, unknown> = await buildBody(protocol)
+
+    const provisionalProtocol: CommandCodeProtocol = connection.protocol === 'cli'
+      ? 'cli'
+      : this.routesToMessages(options.model, modelEntry) ? 'messages' : 'openai'
+    const finishCredentials = timing.phase('credentials')
+    const credentials = this.deps.resolveApiKey(connection, options.model)
+    // 两条路径都可能在对方完成前失败；先挂处理器，避免其中一条的拒绝变成未处理
+    // 拒绝（`await` 仍按原样重抛，错误对象与身份不变）。
+    void credentials.catch(() => undefined)
+    // The opt-in CLI cache mitigation (issue #64) refuses on a fact only the
+    // resolved key can name — the account's transport — and it must refuse
+    // BEFORE the first image read, so that one path keeps the strictly
+    // sequential order it has always had. Every other request is free to
+    // overlap its body with credential resolution. A budget that already asks
+    // for an offload is also left sequential: its body could never be sent, so
+    // reading and encoding the images first would be pure waste.
+    const provisionalBody = connection.offloadSeenImagesForCache === true || projected.budgetMissing > 0
+      ? undefined
+      : buildBody(provisionalProtocol)
+    void provisionalBody?.catch(() => undefined)
+    let apiKey: string
+    try { apiKey = await credentials } finally { finishCredentials() }
+    options.signal?.throwIfAborted()
+    // 等待期间别的请求可能刷新过目录或学到更低的上限：重算一次，让正文、指纹
+    // 与实发预算描述同一个数字（循环顶部那次收紧仍然兜底）。
+    maxTokens = Math.min(budget.max, learnedOutputLimit(connection.apiBase, options.model))
+
+    // Endpoint protocol: billing/cache may know Go plan -> CLI; unknown
+    // accounts default to the documented Provider Chat Completions surface
+    // (`resolveProtocol()` routes Claude to Messages on Provider API access).
+    let protocol: CommandCodeProtocol = this.resolveProtocol(connection, apiKey, options.model, modelEntry)
+    // Image gate, now that BOTH the credential and the real transport are known.
+    //
+    // - The budget half was already counted (pure) before the first I/O.
+    // - The cache half applies only on the CLI transport (issue #64).
+    // - The two are reported as ONE error with the larger count, exactly like
+    //   the pre-batching gate: reporting only the budget first made the host
+    //   offload in two rounds (and described a `cache` overflow as `budget`).
+    // - Raising it here also keeps a missing credential the primary error:
+    //   `await credentials` above already threw in that case, so this check is
+    //   never reached for a request that cannot authenticate.
+    const cacheMissing = protocol === 'cli' && connection.offloadSeenImagesForCache === true
+      ? seenImageOffloadCount(requestOptions.messages, options.model)
+      : 0
+    const missing = Math.max(projected.budgetMissing, cacheMissing)
+    if (missing > 0) {
+      throw imageOffloadRequired(missing, cacheMissing > projected.budgetMissing ? 'cache' : 'budget')
+    }
+    // 反推 messages 端点对本次账号的权限拒绝（issue #84）。只活在一次 stream()
+    // 调用里，并在最终错误文案中留痕：它描述的是这一条 Claude 链路，既不能
+    // 缓存成整个网关的协议结论，也不该覆盖 CLI 直连自己的失败原因。
+    let messagesPermissionRejection: string | undefined
+    let body: Record<string, unknown> = provisionalBody !== undefined && protocol === provisionalProtocol
+      ? await provisionalBody
+      : await buildBody(protocol)
+    // 凭据等待期间别的请求可能学到更低的上限，而正文是在那之前装配的：把新数字
+    // 补写进去，指纹与实发预算才描述同一次连接。被省略的字段继续保持省略
+    // （issue #74），预算本身则同步收紧，供本轮的降档与拒绝恢复读取。
+    if (maxTokens !== builtMaxTokens) {
+      budget.max = Math.min(budget.max, maxTokens)
+      if (!omitOutputTokens(connection.maxOutputTokens, protocol, options.maxTokens)) {
+        assignMaxTokens(body, protocol, maxTokens)
+      }
+    }
     const serializedBodies = new WeakMap<Record<string, unknown>, string>()
 
     // The opt-in trace now starts before the first connect attempt so a cache
@@ -3502,7 +3757,10 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
       trace.close()
       if (options.signal?.aborted) throw error
       throw failureWithRequestId(
-        this.gradeHeaderTimeout(error, protocol, body, connection.requestTimeoutMs, options.sessionId),
+        this.gradeHeaderTimeout(
+          error, protocol, body, connection.requestTimeoutMs, options.sessionId,
+          serializedBodies.get(body),
+        ),
         responseMetadata,
       )
     }

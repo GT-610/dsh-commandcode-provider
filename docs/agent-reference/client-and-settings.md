@@ -14,6 +14,8 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
 - **凭据事实与销毁**：凭据返回成功即为写入确认，描述仅提供存在性；描述失败或缺失保留最后确认事实，首次尚无确认时明确显示状态未知，重试入口只读状态。按引用及读取世代屏蔽迟到描述。普通切页不关闭共享控制器；插件销毁停止未开始任务，已发调用自然收束，不进入后续阶段。
 - **凭据写入不再被环境变量遮蔽（alpha.3）**：凭据服务的 `describe()` 恒返回 `writable: true`，写入不再因环境变量遮蔽而被拒，服务内部的层序同步反转为「托管存储 → 继承环境 → 项目 `.env` → `$DSH_HOME/.env`」。**headless（无头）profile 有意不挂载 `credentials`／`authorization`／`deepseek-account` 三行**，没有凭据服务可读写，一次性任务只认启动环境与 `.env`。密钥解析侧见[账号与重试](accounts-and-retry.md)。
 - **自动轮换**：取消固定账号时基础层仍固定账号，则显式写 `activeAccount: ''`；仅清除用户覆盖会重新露出基础层固定账号，不等于自动轮换。普通字段重置仍恢复继承。
+- **用量读取的自动与显式路径**：一份用量报告是四次上游调用，而面板与账户卡片都会在无人操作时各自读取。`CommandCodeUsageController.refresh({ auto: true })` 标记「没人点过」的刷新，只有它在 `USAGE_AUTO_REFRESH_COALESCE_MS`（5 秒）内复用刚刚读取的结果；首屏 effect 与面板 tick 都走这条路径。按钮、保存、换/清凭据等显式调用不传 `auto`，不查合并窗口，永远真的去读（请求在途时仍按既有 `inFlight` 规则折叠，不会因点击再发一份）。窗口刻意很小，`fetchedAt` 因此仍如实反映数字被读取的时刻。首屏接线的真实渲染用例见 `tests/accounts-card-render.test.ts`：首屏必须调 `onRefreshAuto()`，刷新按钮必须调 `onRefresh()`。
+- **隐藏页面不轮询**：`startPanelAutoRefresh()` 的 tick 先问 `AutoRefreshVisibility.isVisible()`（默认读 `document.visibilityState` 并订阅 `visibilitychange`），隐藏时跳过读取但照旧重排定时器；重新可见立即补读一次（该补读走 `auto`，5 秒内仍可能被合并）。首屏那次无条件读取 —— 那一刻没有数据可显示。可见性是可注入接缝，非浏览器环境视为始终可见。监听句柄与循环状态同层（模块级），因此启动循环的 surface 先卸载时也照样解绑，任意卸载顺序都不泄漏。
 - **运行中请求的配置生效**：已确认的网关、账号列表、固定账号和模型规则用于新调用，已经开始的适配器调用继续使用自己的快照。引用凭据每次账号选择仍重新解析；清除后可能按既有优先级使用默认账号的授权文件兜底，不撤回已发请求或当前尝试已取得的密钥。
 - **账户移除与清理**：`accounts`、`modelAccountRules`、固定账户及 `credentialCleanupRefs` 在一次带版本检查的 `remote.settings.mutate` 中提交，再清理凭据。失败队列持久化，页面刷新后仍显示重试；重新引用、继承配置和默认密钥受保护。无法确认凭据事实时保留队列。宿主配置与凭据服务并无共同事务，不能承诺任意外部并发重建与凭据删除跨服务原子化。
 
