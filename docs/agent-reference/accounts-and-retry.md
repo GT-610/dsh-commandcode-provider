@@ -256,6 +256,11 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   自动回收，改为容量上限 200 条 + 先进先出淘汰。无 `sessionId` 的一次性调用退回旧的单槽全局行为。
   `tests/adapter.test.ts` 新增并发会话独立累计、无会话回退两个用例。参见
   [《决策记录》第一章第 3 条](../决策记录.md#一请求失败恢复)。
+  指纹取自**已经序列化好的实发字符串**（`serializedBodies` 里的那份，用 `sha256Hex()` 求摘要），
+  不再对 `body` 重新 `JSON.stringify`：超时是最常重复的路径，而带图历史可达数 MB，重走整棵 body
+  只为算第二个意见。这也更准确——实发字符串就是网关看到的字节，重新 stringify 会在 surrogate
+  清洗真的删掉过字符时描述到不同的字节，把一次连续超时拆成两条 streak。没有实发字符串时
+  （正文从未上过线）才回落到对象哈希。
 - **设置页账号卡片 / 侧边栏统计的"当前使用"徽章必须和真实请求路由共用同一套自愈逻辑，否则它显示的是过期标记**
   (`CommandCodeAccountPool.activeAccount()` in `src/accounts.ts`; issue #51 的后续报告：账号卡片和侧边栏
   统计一起被"切到另一个账号"，且比真实请求恢复得慢得多)。`resolveKey()`（真实请求路径）对**显式选中**

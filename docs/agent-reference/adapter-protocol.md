@@ -213,10 +213,14 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
     a root `$ref` is inlined from its local `$defs`/`definitions`; an `allOf`/`anyOf`/`oneOf` root is
     flattened (branch properties unioned, `required` kept only where every alternative demands it); anything
     else degrades to a permissive free-form object, since a refused request helps no one. Only the root is
-    touched and every path returns a copy (the harness may deep-freeze tool schemas), and the walk is
-    depth-bounded so a self-referential JS schema cannot spin. `toolParametersSchema()` is applied at all
-    three call sites, so the CLI `input_schema`, the OpenAI `function.parameters` and the Messages
-    `input_schema` cannot drift apart.
+    touched; the object-root fast path returns the caller's own object (the harness may deep-freeze tool
+    schemas, and callers rely on that identity), while everything the function CONSTRUCTS is a fresh object.
+    The walk is depth-bounded so a self-referential JS schema cannot spin. The depth-0 result is memoized
+    per `parameters` object in a `WeakMap`, because every transport rebuilds its tool list on every attempt:
+    a rotation, a protocol fallback or a downshift re-walks the same handful of schemas for an answer that
+    cannot have changed. Harness tool objects are stable for the life of a turn, so identity is an exact key.
+    `toolParametersSchema()` is applied at all three call sites, so the CLI `input_schema`, the OpenAI
+    `function.parameters` and the Messages `input_schema` cannot drift apart.
   - Image parts on `/alpha/generate` use the official CLI's FINAL `toWireMessages()` shape: `{ type:
     'image', image: 'data:<mime>;base64,...', mimeType: '<mime>' }`. The `{ type: 'image', source: { type:
     'base64', media_type, data } }` shape is an internal CLI input block, not what it posts. OpenAI
