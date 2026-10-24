@@ -4,7 +4,7 @@
  * subscription-plan labels, deals, and hourly (peak/off-peak) pricing.
  *
  * Everything here is synced from official sources — the command-code CLI
- * bundle's model table (`dist/cli.mjs`, re-verified at command-code@1.87.1), the
+ * bundle's model table (`dist/cli.mjs`, re-verified at command-code@1.88.0), the
  * live model catalog (`GET /provider/v1/models?view=client`, the authority for
  * capability fields since 1.82.4), and the official plan/pricing/model docs; see
  * the dsh-commandcode-upstream skill for the extraction procedures. The
@@ -12,10 +12,15 @@
  * 1.5 122B launch pair in the catalog, the ZDR exclusion-set prune and the
  * MiniMax M3.1 Flash promo extension; the follow-up check later that day moved
  * the pinned constant to 1.86.3 (request header only). The 2026-10-22 check
- * moves it to 1.87.1: the CLI bundle's registry, effort map, subscription plans
- * and ZDR exception set are identical, and the live catalog's capability fields
- * did not move either, so the only data added here is one output-limit row
- * (`thinkingmachines/inkling-small`). Keeping the snapshot in its own module
+ * moved it to 1.87.1 (one output-limit row: `thinkingmachines/inkling-small`),
+ * and the 2026-10-23 check to 1.87.3 with every snapshot unchanged apart from
+ * the four retired catalog rows. The 2026-10-24 check moves it to 1.88.0 — a
+ * silent artifact-only release — and picks up the one row that did move in the
+ * catalog: Kimi K3.1 Pro (`moonshotai/Kimi-K3.1-Pro`, 1M context, text + image,
+ * efforts `low/high/max`, Go tier, `$2/$10/$0.2`). The 1.88.0 artifact does not
+ * name that row yet; the default catalog, `?view=client`, the models docs page
+ * and the pricing page all do, so the capability fields come from the catalog
+ * as usual. Keeping the snapshot in its own module
  * confines those frequent sync diffs here: src/adapter.ts holds only the stable
  * wire/runtime logic. The read helpers live here too, for the same reason.
  *
@@ -28,7 +33,7 @@ import { PLAN_LABELS, PLAN_ORDER } from './plan-tiers.ts'
 export { PLAN_LABELS, PLAN_ORDER } from './plan-tiers.ts'
 
 export const KNOWN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
-  // Re-verified against the authoritative command-code@1.87.1 model table. From
+  // Re-verified against the authoritative command-code@1.88.0 model table. From
   // 1.82.4 the CLI no longer keeps this map bundled: `getSupportedEfforts()`
   // resolves it through the model catalog (`reasoningEfforts`), served live at
   // `GET /provider/v1/models?view=client` and falling back to an embedded
@@ -103,6 +108,11 @@ export const KNOWN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   'gpt-5.6-terra': ['low', 'medium', 'high', 'xhigh', 'max'],
   // command-code@1.39.3; it previously reasoned automatically with no levels.
   'moonshotai/Kimi-K3': ['low', 'high', 'max'],
+  // 2026-10-24 (catalog-only sync): the 1.88.0 artifact does not name Kimi K3.1
+  // Pro, but `?view=client` serves `reasoningEfforts:["low","high","max"]` and
+  // the pricing page carries `caps.reasoning: true`. Same three-level set as its
+  // K3 predecessor; do not inherit future levels from it without re-checking.
+  'moonshotai/Kimi-K3.1-Pro': ['low', 'high', 'max'],
   // command-code@1.43.0.
   'google/gemini-3.8-flash': ['low', 'medium', 'high'],
   // 2026-10-16, first seen at the 1.84.0 sync: the live `?view=client` catalog
@@ -319,6 +329,10 @@ export const KNOWN_IMAGE_MODELS: ReadonlySet<string> = new Set([
   'moonshotai/Kimi-K2.7-Code',
   'moonshotai/Kimi-K2.7-Code-Highspeed',
   'moonshotai/Kimi-K3',
+  // 2026-10-24 (catalog-only sync): inputModalities:["text","image"] in the live
+  // `?view=client` catalog, and both the pricing page (`caps.vision: true`) and
+  // the models docs page mark the row Vision.
+  'moonshotai/Kimi-K3.1-Pro',
   // 2026-10-21 (command-code@1.86.1 sync): inputModalities:["text","image"] in
   // the live `?view=client` catalog and `caps.vision: true` on both the pricing
   // page and the models docs page. The `:free` twin left this map on 2026-10-23
@@ -819,8 +833,8 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * `/docs/plans/max` and `/docs/resources/pricing-limits`). Each plan's model
  * list is a superset of the one below it: Go ⊂ GOAT ⊂ Pro ⊂ Provider/Max.
  * Models absent from every plan list (Claude Opus/Fable, Fugu Ultra) are
- * Provider-tier. Re-verified at command-code@1.87.1 (2026-10-22) against the
- * live `?view=client` catalog: 104 ids, still a strict superset chain. Mistral
+ * Provider-tier. Re-verified at command-code@1.88.0 (2026-10-24) against the
+ * live `?view=client` catalog: 105 ids, still a strict superset chain. Mistral
  * Large 4
  * (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair
  * added Claude Haiku 5.5 at Pro and the free Glyph Cluster preview at Go.
@@ -831,7 +845,7 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * which left the live catalog. Every other
  * tier is unchanged. The 1.86.1 sync (2026-10-21) adds only the Ornith 1.5 122B
  * launch pair at Go; the 1.87.1 check (2026-10-22) adds no model and moves no
- * tier.
+ * tier, and the 2026-10-24 check adds only Kimi K3.1 Pro at Go.
  * The only removals since 1.49.0 are the two retired stealth previews (Pixel
  * Canary at 1.73.1, Space Bunny Alpha at 1.74.3), Ling 3.0 Flash Sante
  * (2026-10-16) and the retired Cat Jam preview (2026-10-20). Per-entry tags
@@ -846,7 +860,7 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * dsh-commandcode-upstream skill).
  */
 export const KNOWN_PLANS: Readonly<Record<string, string>> = {
-  // --- Go (56 paid + 4 free) ---
+  // --- Go (57 paid + 4 free) ---
   'MiniMaxAI/MiniMax-M2.5': 'go',
   'MiniMaxAI/MiniMax-M2.7': 'go',
   'MiniMaxAI/MiniMax-M3': 'go',
@@ -913,6 +927,10 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   'moonshotai/Kimi-K2.7-Code': 'go',
   'moonshotai/Kimi-K2.7-Code-Highspeed': 'go',
   'moonshotai/Kimi-K3': 'go',
+  // 2026-10-24 (catalog-only sync): `minimumPlan: "individual-go"` in the live
+  // `?view=client` catalog and every tier true in the pricing page's embedded
+  // availability (`"all": true`); the go/goat/pro plan pages all list the row.
+  'moonshotai/Kimi-K3.1-Pro': 'go',
   'nvidia/nemotron-3-ultra-550b-a55b': 'go',
   // 2026-10-14; individual-go true, the "all":true shape shared by the rest of
   // the open-weight Nemotron family.
@@ -932,7 +950,9 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   // `stealth/cat-jam:free` left — the 1.86.1 sync took it to 96 with the Ornith
   // 1.5 122B pair, and the 2026-10-23 sync takes it to 92: both `:free` twins
   // lapsed and the MiMo V2.5 pair went hidden, so those four ids left this map
-  // and `?view=client` now hides twelve rows.
+  // and `?view=client` now hides twelve rows. The 2026-10-24 check adds Kimi
+  // K3.1 Pro and takes it to 93 while `?view=client` goes to 105 (the same
+  // twelve hidden rows).
   'reflection/beam:free': 'go',
   'stepfun/Step-3.5-Flash': 'go',
   'stepfun/Step-3.7-Flash': 'go',

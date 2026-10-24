@@ -88,19 +88,19 @@ export { DEFAULT_MAX_OUTPUT_TOKENS, MODEL_CATALOG_TTL_MS } from './gateway-facts
 // Request / connection defaults (protocol constants). The model/plan/deal
 // capability snapshot lives in ./capabilities.ts — the sync-only surface.
 // ---------------------------------------------------------------------------
-// Rides every request as `x-command-code-version`. The 1.87.3 bump is a pure
-// header sync: the 1.87.1 -> 1.87.3 artifacts add no runtime contract this
-// plugin consumes. Both patches are CLI-local (1.87.2: `cmd acp` mod options,
-// invalid reasoning-effort tolerance, process-name re-set, real provider errors
-// mid-stream; 1.87.3: Claude Code permission-mode aliases, BYOK package
-// refresh), and the artifact diff keeps endpoints (64), custom headers (5, all
-// `x-` prefixed), the `/alpha/generate` call sites, `promptCache`,
-// `reasoning_effort`, the model registry, efforts, subscriptions and the ZDR
-// exception set identical. Only the server catalog moved on 2026-10-23: four
-// rows were hidden (`minimax/minimax-m3.1-flash:free`,
-// `ornith/ornith-1.5-122b:free`, `xiaomi/mimo-v2.5`, `xiaomi/mimo-v2.5-pro`),
-// so the snapshot drops them — see ./capabilities.ts and ./model-prices.ts.
-export const COMMAND_CODE_CLI_VERSION = '1.87.3'
+// Rides every request as `x-command-code-version`. The 1.88.0 bump is a pure
+// header sync: the 1.87.3 -> 1.88.0 artifacts add no runtime contract this
+// plugin consumes. The release is silent upstream — the official changelog's
+// newest CLI entry is still 1.87.3 — so the conclusion is artifact-level: the
+// endpoint set, the custom request headers, the `/alpha/generate` call site,
+// the `promptCache` / `reasoning_effort` / `max_tokens` literals, the model
+// table's fields, the effort map, the subscription tables and the ZDR exception
+// set are identical. The only registry change is `hidden: true` on
+// `xiaomi/mimo-v2.5` and `xiaomi/mimo-v2.5-pro`, the same two rows the catalog
+// hid on 2026-10-23. The server catalog moved on 2026-10-24 instead: one row
+// was added (`moonshotai/Kimi-K3.1-Pro`, 1M context, $2/$10/$0.2, Go tier), so
+// the snapshots gain it — see ./capabilities.ts and ./model-prices.ts.
+export const COMMAND_CODE_CLI_VERSION = '1.88.0'
 export const DEFAULT_API_BASE = 'https://api.commandcode.ai'
 
 /**

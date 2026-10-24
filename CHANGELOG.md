@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.4] - 2026-10-24
+
+### Changed
+
+- **同步 Command Code CLI `1.87.3` → `1.88.0`（纯请求头同步）。** `1.88.0` 于 `2026-10-24T02:55Z` 发布，官方变更日志还没有条目（最新 CLI 条目仍是 `1.87.3`），因此结论来自产物级静态比对：端点集合、自定义请求头、`/alpha/generate` 调用点、`promptCache` / `reasoning_effort` / `max_tokens` 字面量、模型注册表字段、推理档位、订阅表与 ZDR（零数据保留）例外集逐项相同（审计 `cliDiff` 的 efforts / subscriptions / zdrExceptions 三类全空）；注册表唯一变化是 `xiaomi/mimo-v2.5` 与 `xiaomi/mimo-v2.5-pro` 增加 `hidden: true`，与 10-23 目录隐藏这两行一致。`COMMAND_CODE_CLI_VERSION` 只随请求头更新，运行时行为不变。
+
+- **新增 `moonshotai/Kimi-K3.1-Pro`（服务端目录先行，CLI 产物尚未收录）。** `catalogVersion` 由 `02bfc7ac…` 变为 `f41a48ed…`，默认目录 92 → 93、`?view=client` 104 → 105，唯一新增行就是 Kimi K3.1 Pro：1,048,576 上下文、文本 + 图像、推理档位 `low` / `high` / `max`、最低计划 Go、`$2/$10/$0.2`、月度额度 Go `$6` / GOAT `$20` / Pro `$30`，无促销、无峰值时段、无上下文分档，ZDR 默认覆盖。官方 models 页、pricing 页与 go/goat/pro 计划页均已上架；`1.88.0` 的 CLI 注册表还没写这一行，审计把「absent from CLI registry」报成 error——能力字段以 `?view=client` 目录为准。快照随之 +1：`KNOWN_PLANS` 92 → 93、`KNOWN_EFFORTS` 65 → 66、`KNOWN_IMAGE_MODELS` 71 → 72、内置价格行 92 → 93；ZDR 例外集（18）、自动思考模型表（16）、输出上限表（79）、订阅表（9）、促销（4）与峰值定价（4）不变。
+
+### Verification
+
+- `npm run typecheck` 退出码 0；`npm test` **1107／1107** 通过、0 失败；`npm run build` 两段 `Build complete`，`lib/index.js` 与 `lib/index.d.ts` 已重建（含 `1.88.0` 与 `kimi-k3.1-pro`）。
+- 上游公开 GET 采集 14 个源全部 HTTP 200；审计状态 `incomplete` 的 3 条 error 为 Kimi K3.1 Pro 不在 CLI 产物注册表，以及 MiniMax M3.1 Flash 与 Ornith 1.5 122B 的已知定价别名缺失，均非抓取失败。
+- **未做**：真实账号登录、付费生成、服务端协议验证与浏览器渲染。
+
 ## [0.15.3] - 2026-10-24
 
 ### Changed

@@ -6054,6 +6054,11 @@ test('known efforts snapshot covers the models the catalog advertises', () => {
   assert.deepEqual(KNOWN_EFFORTS['stealth/glyph-cluster:free'], ['low', 'medium', 'high', 'xhigh'])
   assert.ok(!KNOWN_THINKING_MODELS.has('claude-haiku-5-5'))
   assert.ok(!KNOWN_THINKING_MODELS.has('stealth/glyph-cluster:free'))
+  // 2026-10-24: Kimi K3.1 Pro is catalog-only in the 1.88.0 artifact (the CLI
+  // registry does not name it yet) and serves the same three selectable levels
+  // as its K3 predecessor, so it belongs here and not in the thinking set.
+  assert.deepEqual(KNOWN_EFFORTS['moonshotai/Kimi-K3.1-Pro'], ['low', 'high', 'max'])
+  assert.ok(!KNOWN_THINKING_MODELS.has('moonshotai/Kimi-K3.1-Pro'))
 })
 
 test('known thinking snapshot covers reasoning models without effort levels', () => {
@@ -6193,6 +6198,9 @@ test('known image models snapshot has stable anchor entries', () => {
   // The MiMo V2.6 family does not reason (docs: "Text input, Vision"); only its
   // Vision capability is snapshotted.
   assert.ok(!KNOWN_THINKING_MODELS.has('xiaomi/mimo-v2.6-pro'))
+  // 2026-10-24: inputModalities ["text","image"] in the live catalog, and both
+  // the pricing page and the models docs page label the row Vision.
+  assert.ok(KNOWN_IMAGE_MODELS.has('moonshotai/Kimi-K3.1-Pro'))
 })
 
 test('known plan snapshot tiers models by the official plan pages', () => {
@@ -6295,6 +6303,11 @@ test('known plan snapshot tiers models by the official plan pages', () => {
   assert.equal(KNOWN_PLANS['inclusionai/ling-3.1-flash'], 'go')
   assert.equal(planLabel('inclusionai/ling-3.1-flash'), 'Go')
   assert.equal(KNOWN_PLANS['inclusionai/ling-3.1-flash:free'], undefined)
+  // 2026-10-24: Kimi K3.1 Pro is Go on every source — `minimumPlan:
+  // "individual-go"` in the live catalog and `"all": true` in the pricing page's
+  // embedded availability, so it appears on the go/goat/pro plan pages alike.
+  assert.equal(KNOWN_PLANS['moonshotai/Kimi-K3.1-Pro'], 'go')
+  assert.equal(planLabel('moonshotai/Kimi-K3.1-Pro'), 'Go')
   // Labels match the official tier names.
   assert.equal(planLabel('MiniMaxAI/MiniMax-M3'), 'Go')
   assert.equal(planLabel('claude-sonnet-5'), 'Pro')
@@ -6570,7 +6583,7 @@ test('CLI version and API base constants are stable', () => {
   // record — what each upstream version added and what was re-verified unchanged — lives
   // in CHANGELOG.md (whose newest published entry may lag the pinned constant); this
   // assertion pins the constant only.
-  assert.equal(COMMAND_CODE_CLI_VERSION, '1.87.3')
+  assert.equal(COMMAND_CODE_CLI_VERSION, '1.88.0')
   assert.equal(DEFAULT_API_BASE, 'https://api.commandcode.ai')
 })
 

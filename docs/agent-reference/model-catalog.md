@@ -59,6 +59,22 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   image 74 → 71, thinking 17 → 16, deals 8 → 4, vendored price rows 94 → 92, output-limit rows
   82 → 79; ZDR stays 18.
 
+  **Follow-up check (2026-10-24, CLI 1.87.3 → 1.88.0):** npm `latest` reached `1.88.0`
+  (10-24T02:55Z) with no changelog entry yet (the newest CLI entry is still `1.87.3`), so the
+  conclusion is artifact-level: the endpoint set, custom headers, the `/alpha/generate` call site,
+  `promptCache`, `reasoning_effort`, `max_tokens`, the registry fields, effort map, subscription
+  tables and ZDR exception set are identical (audit `cliDiff` empty for efforts / subscriptions /
+  zdrExceptions), and the only registry change is `hidden: true` on `xiaomi/mimo-v2.5` and
+  `xiaomi/mimo-v2.5-pro`. The server catalog moved `catalogVersion` `02bfc7ac…` → `f41a48ed…`:
+  the default view went 92 → 93 and `?view=client` 104 → 105 with exactly one added row,
+  `moonshotai/Kimi-K3.1-Pro` (1,048,576 context, text + image, efforts `low`/`high`/`max`, Go
+  tier, `$2/$10/$0.2`, allowance Go `$6` / GOAT `$20` / Pro `$30`, no deal, no peak schedule, no
+  context tiers, ZDR covered). The models docs page, the pricing page and the go/goat/pro plan
+  pages all list it, while the `1.88.0` artifact registry does not name it yet — the audit reports
+  that as an `incomplete` error (`absent from CLI registry`), and the capability fields come from
+  `?view=client` as usual. Snapshots: plans 92 → 93, efforts 65 → 66, image 71 → 72, vendored
+  price rows 92 → 93; ZDR stays 18, output-limit rows stay 79, deals stay 4, thinking stays 16.
+
   - `KNOWN_EFFORTS` — model → selectable reasoning-effort levels. Authoritative source is the live
     `?view=client` catalog's `reasoningEfforts` (since command-code@1.82.4 the CLI no longer keeps this map
     bundled — `getSupportedEfforts()` resolves it through the catalog, whose embedded bootstrap snapshot
