@@ -686,3 +686,24 @@ test('omitted purchased and free balances remain unknown while explicit zero is 
   const missing = buildPanelView({ apiKeyConfigured: true, usage: usage({ report: { accounts: [entry({ configured: false })] } }) })
   assert.equal(missing.noKey, true, 'only the Host can establish that no usable key exists')
 })
+
+test('启动者先卸载时可见性监听也必须解绑，任意卸载顺序都不泄漏', () => {
+  // 只有启动循环的那次 start 拿到订阅句柄，但它不一定是最后卸载的 surface。
+  // 句柄若留在函数局部，启动者先停就永远走不到解绑分支，监听随挂载周期累积。
+  resetPanelAutoRefresh()
+  const timer = fakeTimer()
+  let subscribes = 0
+  let unsubscribes = 0
+  const visibility = {
+    isVisible: () => true,
+    subscribe: () => { subscribes += 1; return () => { unsubscribes += 1 } },
+  }
+  const source = { state: () => usage(), refresh: async () => {} }
+  const stopStarter = startPanelAutoRefresh(source, () => true, timer, visibility)
+  const stopSecond = startPanelAutoRefresh(source, () => true, timer, visibility)
+  assert.equal(subscribes, 1, '只有启动循环的那次订阅')
+  stopStarter()
+  stopSecond()
+  assert.equal(unsubscribes, 1, '任意卸载顺序都必须解绑一次')
+  resetPanelAutoRefresh()
+})

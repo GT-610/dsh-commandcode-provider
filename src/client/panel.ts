@@ -569,6 +569,16 @@ let activeTicket: number | undefined
 let ticketSeq = 0
 /** Pending timer handle of the running loop. */
 let handle: unknown
+/**
+ * Unsubscribe of the visibility listener owned by the RUNNING loop.
+ *
+ * Module-level on purpose: only the surface that started the loop receives the
+ * subscribe handle, but that surface is not necessarily the last to unmount.
+ * Keeping the handle on the same layer as `activeTicket`/`handle` lets any
+ * teardown order release it; a function-local handle leaked the listener
+ * whenever the starter unmounted first.
+ */
+let visibilityUnsubscribe: (() => void) | undefined
 
 /**
  * Start the shared auto refresh. One fetch when the surface appears (the sidebar
@@ -611,7 +621,6 @@ export function startPanelAutoRefresh(
     handle = timer.set(tick, PANEL_AUTO_REFRESH_MS)
   }
 
-  let unsubscribe: (() => void) | undefined
   if (activeTicket === undefined) {
     activeTicket = ticket
     handle = timer.set(tick, PANEL_AUTO_REFRESH_MS)
@@ -621,7 +630,7 @@ export function startPanelAutoRefresh(
     fetch()
     // Coming back into view is the one moment the visible data is KNOWN to be
     // stale, so it is also the one moment worth fetching outside the tick.
-    unsubscribe = visibility.subscribe?.(() => {
+    visibilityUnsubscribe = visibility.subscribe?.(() => {
       if (activeTicket !== ticket || !visibility.isVisible()) return
       fetch()
     })
@@ -637,8 +646,10 @@ export function startPanelAutoRefresh(
     // is not necessarily the last to unmount.
     if (references > 0) return
     activeTicket = undefined
-    unsubscribe?.()
-    unsubscribe = undefined
+    // The handle lives on the module layer, so this teardown releases it no
+    // matter which surface started the loop.
+    visibilityUnsubscribe?.()
+    visibilityUnsubscribe = undefined
     if (handle !== undefined) {
       timer.clear(handle)
       handle = undefined
@@ -656,5 +667,7 @@ export function startPanelAutoRefresh(
 export function resetPanelAutoRefresh(): void {
   references = 0
   activeTicket = undefined
+  visibilityUnsubscribe?.()
+  visibilityUnsubscribe = undefined
   handle = undefined
 }

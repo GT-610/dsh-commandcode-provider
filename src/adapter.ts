@@ -934,10 +934,38 @@ function coreBudget(budget: RequestImageBudget): CoreImageBudget {
 const imageVersionBytes: ImageVersionBytes = (block) => block.attachment.bytes
 
 /**
+ * The accounting half of the image gate: project the surface's durable offload
+ * marks and count what the byte budget still needs — WITHOUT throwing.
+ *
+ * The throw has to wait until the credential is known. A request that cannot
+ * authenticate must not trigger a durable (irreversible) image offload before
+ * the caller learns the key is missing; keeping the count pure lets
+ * `streamAttempt()` run it before ANY I/O and report ONE error later, once the
+ * real transport is known.
+ */
+function projectSurfaceBudget(
+  options: GenerateOptions,
+  policy: SurfaceImagePolicy,
+  budget: RequestImageBudget,
+): { options: GenerateOptions; budgetMissing: number } {
+  const marked = policy.projectOffloadedImages(options.messages, (ref) => offloadedImageText(ref))
+  const messages = marked === options.messages ? options.messages : [...marked]
+  return {
+    options: messages === options.messages ? options : { ...options, messages },
+    budgetMissing: policy.requiredImageOffload(messages, coreBudget(budget), imageVersionBytes),
+  }
+}
+
+/**
  * Request options under one budget rung: the surface's durable marks become
  * placeholder text, and an over-budget history FAILS with the count to offload
  * instead of being evicted here. Throws rather than returning, so no caller can
  * accidentally send a body this route already knows is too large.
+ *
+ * This is the one-shot form (budget + cache in a single error) used by the 413
+ * downshift and the protocol fallback. `streamAttempt()`'s first pass uses
+ * {@link projectSurfaceBudget} instead, because there the throw must wait for
+ * the credential.
  *
  * The next rung is applied to the CURRENT projection, never to the raw history —
  * otherwise the 413 retry could reintroduce images the first rung had already
@@ -949,13 +977,11 @@ function withSurfaceOffload(
   budget: RequestImageBudget,
   cacheOffloadModel?: string,
 ): GenerateOptions {
-  const marked = policy.projectOffloadedImages(options.messages, (ref) => offloadedImageText(ref))
-  const messages = marked === options.messages ? options.messages : [...marked]
-  const budgetMissing = policy.requiredImageOffload(messages, coreBudget(budget), imageVersionBytes)
-  const cacheMissing = cacheOffloadModel === undefined ? 0 : seenImageOffloadCount(messages, cacheOffloadModel)
-  const missing = Math.max(budgetMissing, cacheMissing)
-  if (missing > 0) throw imageOffloadRequired(missing, cacheMissing > budgetMissing ? 'cache' : 'budget')
-  return messages === options.messages ? options : { ...options, messages }
+  const projected = projectSurfaceBudget(options, policy, budget)
+  const cacheMissing = cacheOffloadModel === undefined ? 0 : seenImageOffloadCount(projected.options.messages, cacheOffloadModel)
+  const missing = Math.max(projected.budgetMissing, cacheMissing)
+  if (missing > 0) throw imageOffloadRequired(missing, cacheMissing > projected.budgetMissing ? 'cache' : 'budget')
+  return projected.options
 }
 
 /**
@@ -3422,15 +3448,17 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
 
     // Image budget (issue #37): the body is built from the PROJECTED history,
     // never the raw one. Rung 0 is the standing budget; a 413 below steps down
-    // the ladder. The session surface owns the offload set, so this throws
-    // `IMAGE_OFFLOAD_REQUIRED` when more images must go; the retry then
-    // arrives with the surface already updated.
+    // the ladder. The session surface owns the offload set, so an over-budget
+    // history fails with `IMAGE_OFFLOAD_REQUIRED`.
     //
-    // This first pass is the accounting half only, and runs before ANY I/O: a
-    // history that must commit an offload first costs neither a credential
-    // round trip nor a single image read. The CLI-only cache knob below is
-    // re-applied once the account's transport is actually known.
-    let requestOptions = withSurfaceOffload(options, this.surfaceOffload, REQUEST_IMAGE_BUDGETS[0]!)
+    // This first pass is the ACCOUNTING half only: it runs before any I/O and
+    // deliberately does NOT throw. Throwing here would report an image problem
+    // before the credential is resolved, and the host reacts to that error by
+    // durably (irreversibly) offloading the oldest images — for a request that
+    // could never have been sent because its key is missing. The one error is
+    // raised below, once the credential and the real transport are known.
+    const projected = projectSurfaceBudget(options, this.surfaceOffload, REQUEST_IMAGE_BUDGETS[0]!)
+    let requestOptions = projected.options
     const buildBody = async (target: CommandCodeProtocol): Promise<Record<string, unknown>> => {
       const finishBody = timing.phase('body')
       try {
@@ -3468,8 +3496,10 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     // resolved key can name — the account's transport — and it must refuse
     // BEFORE the first image read, so that one path keeps the strictly
     // sequential order it has always had. Every other request is free to
-    // overlap its body with credential resolution.
-    const provisionalBody = connection.offloadSeenImagesForCache === true
+    // overlap its body with credential resolution. A budget that already asks
+    // for an offload is also left sequential: its body could never be sent, so
+    // reading and encoding the images first would be pure waste.
+    const provisionalBody = connection.offloadSeenImagesForCache === true || projected.budgetMissing > 0
       ? undefined
       : buildBody(provisionalProtocol)
     void provisionalBody?.catch(() => undefined)
@@ -3484,15 +3514,22 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
     // accounts default to the documented Provider Chat Completions surface
     // (`resolveProtocol()` routes Claude to Messages on Provider API access).
     let protocol: CommandCodeProtocol = this.resolveProtocol(connection, apiKey, options.model, modelEntry)
-    // The cache half of the gate, now that the REAL transport is known: the
-    // first pass above could only judge the byte budget, because the account's
-    // transport is what decides whether this mitigation applies at all. This
-    // can only ever THROW — it never changes the chosen rung — so a body
-    // already assembled for the same target stays valid.
-    if (protocol === 'cli' && connection.offloadSeenImagesForCache === true) {
-      requestOptions = withSurfaceOffload(
-        requestOptions, this.surfaceOffload, REQUEST_IMAGE_BUDGETS[0]!, options.model,
-      )
+    // Image gate, now that BOTH the credential and the real transport are known.
+    //
+    // - The budget half was already counted (pure) before the first I/O.
+    // - The cache half applies only on the CLI transport (issue #64).
+    // - The two are reported as ONE error with the larger count, exactly like
+    //   the pre-batching gate: reporting only the budget first made the host
+    //   offload in two rounds (and described a `cache` overflow as `budget`).
+    // - Raising it here also keeps a missing credential the primary error:
+    //   `await credentials` above already threw in that case, so this check is
+    //   never reached for a request that cannot authenticate.
+    const cacheMissing = protocol === 'cli' && connection.offloadSeenImagesForCache === true
+      ? seenImageOffloadCount(requestOptions.messages, options.model)
+      : 0
+    const missing = Math.max(projected.budgetMissing, cacheMissing)
+    if (missing > 0) {
+      throw imageOffloadRequired(missing, cacheMissing > projected.budgetMissing ? 'cache' : 'budget')
     }
     // 反推 messages 端点对本次账号的权限拒绝（issue #84）。只活在一次 stream()
     // 调用里，并在最终错误文案中留痕：它描述的是这一条 Claude 链路，既不能

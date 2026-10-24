@@ -122,3 +122,49 @@ test('上限拒绝以实发值判断，共享学习只降低且按网关隔离',
   assert.equal(modelOutputTokenLimit(a, model), 20000)
   assert.equal(modelOutputTokenLimit(b, model), 131072)
 })
+
+// ---------------------------------------------------------------------------
+// `loaded()` 的来源判据（PR #98 审查修复 R3/R4）
+//
+// 选择器首屏只允许用「本进程联网成功过」的非空目录：`snapshot()` 会把磁盘
+// 缓存灌进同一份 state.rows，若只看行数，冷启动先聊过天再打开选择器就会拿
+// 没有年龄校验的磁盘副本当首屏；刷新失败后的空目录也不配冒充热数据。
+// ---------------------------------------------------------------------------
+
+test('loaded() 在进程从未加载目录时返回 undefined', () => {
+  const s = source('facts-loaded-cold')
+  assert.equal(new GatewayFacts(async () => catalog()).loaded(s), undefined)
+})
+
+test('snapshot() 灌入的磁盘行不算联网来源，loaded() 仍返回 undefined', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'gateway-loaded-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const s = { ...source('facts-loaded-disk'), modelsCachePath: join(dir, 'models.json') }
+  await writeFile(s.modelsCachePath, JSON.stringify({ version: 3, apiBase: s.apiBase, models: [{ id: model, name: '缓存模型', contextWindow: 1000000, maxTokens: 1, publishedMaxTokens: 20000, supportedEndpoints: ['/messages'] }] }))
+  let calls = 0
+  const facts = new GatewayFacts(async () => { calls += 1; return catalog(90000) })
+  assert.equal((await facts.snapshot(s))[0]?.maxTokens, 20000, '生成路径照旧立刻拿到磁盘行')
+  assert.equal(facts.loaded(s), undefined, '磁盘副本不能当选择器首屏')
+  await facts.refresh(s)
+  assert.equal(facts.loaded(s)?.[0]?.maxTokens, 90000, '联网成功之后才允许先画')
+  assert.equal(calls, 1)
+})
+
+test('刷新失败且无磁盘缓存时 loaded() 返回 undefined，不把空目录当热数据', async () => {
+  const s = source('facts-loaded-failure')
+  const facts = new GatewayFacts(async () => { throw new Error('合成失败') })
+  assert.deepEqual(await facts.refresh(s), [])
+  assert.equal(facts.loaded(s), undefined)
+})
+
+test('loaded() 返回独立副本，调用方改写不会污染内部目录', async () => {
+  const s = source('facts-loaded-copy')
+  const facts = new GatewayFacts(async () => catalog(90000))
+  await facts.refresh(s)
+  const painted = facts.loaded(s)!
+  painted[0]!.maxTokens = 1
+  ;(painted[0]!.supportedEndpoints as string[]).splice(0)
+  const again = facts.loaded(s)!
+  assert.equal(again[0]?.maxTokens, 90000)
+  assert.deepEqual(again[0]?.supportedEndpoints, ['/messages'])
+})

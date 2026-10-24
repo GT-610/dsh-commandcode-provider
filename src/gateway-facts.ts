@@ -96,6 +96,12 @@ interface CatalogState {
   source: string
   rows: CommandCodeModel[]
   expiresAt: number
+  /**
+   * 这批 `rows` 从哪来。`'none'` = 本进程还没加载；`'disk'` = 只读过磁盘缓存
+   * （`snapshot()` 灌入，没有联网成功过）；`'network'` = 本进程联网成功过。
+   * `loaded()` 只认 `'network'`：磁盘副本没有年龄校验，不能当首屏。
+   */
+  origin: 'none' | 'disk' | 'network'
   disk?: Promise<CommandCodeModel[]>
   inflight?: Promise<CommandCodeModel[]>
 }
@@ -108,7 +114,7 @@ export class GatewayFacts {
   constructor(private readonly fetchCatalog: (source: GatewaySource) => Promise<unknown>) {}
   private forSource(source: GatewaySource): CatalogState {
     const identity = JSON.stringify([source.apiBase, source.modelsCachePath])
-    if (this.state?.source !== identity) this.state = { source: identity, rows: [], expiresAt: 0 }
+    if (this.state?.source !== identity) this.state = { source: identity, rows: [], expiresAt: 0, origin: 'none' }
     return this.state
   }
   /** 模型解析保持原有热目录直读；不把生成的磁盘冷读取推广到其他入口。 */
@@ -117,16 +123,17 @@ export class GatewayFacts {
     return row === undefined ? undefined : copyRows([row])[0]
   }
   /**
-   * 本进程已经加载过的目录；从未加载过时返回 undefined。
+   * 本进程**联网成功过**的目录；否则返回 undefined。
    *
-   * 与 {@link snapshot} 的区别是它绝不读磁盘：调用方要区分「有已知行可以先画」与
-   * 「只有一份可能过期的磁盘副本」。磁盘缓存没有年龄校验，用它给选择器当首屏会让
-   * 冷启动显示一份不知道多久以前的目录；而内存里的行要么刚联网取回，要么是同一
-   * 进程里刚刚成功刷新过的结果，可以安全地先画、再后台更新。
+   * 判据是来源而不是「内存里有行」：`snapshot()` 会把磁盘缓存写进同一份
+   * `state.rows`（生成路径需要它），若只看行数，冷启动先发过一次聊天再打开
+   * 选择器时，首屏拿到的就是没有年龄校验的磁盘副本——正是本方法要排除的东西。
+   * 空目录同样返回 undefined：刷新失败后的空行（`expiresAt` 已进入重试窗口）
+   * 不能让选择器把「暂时读不到」画成「没有模型」，调用方应回落到 `refresh()`。
    */
   loaded(source: GatewaySource): CommandCodeModel[] | undefined {
     const state = this.forSource(source)
-    if (state.rows.length === 0 && state.expiresAt === 0) return undefined
+    if (state.origin !== 'network' || state.rows.length === 0) return undefined
     return copyRows(state.rows)
   }
   /** 生成只读取本地目录；捕获状态后不再转向实例的新来源。 */
@@ -136,7 +143,11 @@ export class GatewayFacts {
     state.disk ??= readCache(source).catch(() => [])
     const rows = await state.disk
     if (state.rows.length > 0 || state.expiresAt > 0) return copyRows(state.rows)
-    if (state.inflight === undefined) state.rows = rows
+    if (state.inflight === undefined) {
+      state.rows = rows
+      // 只标记来源，不改变 snapshot 的返回值：生成路径照旧立刻拿到磁盘行。
+      if (rows.length > 0 && state.origin === 'none') state.origin = 'disk'
+    }
     return copyRows(rows)
   }
   async refresh(source: GatewaySource, signal?: AbortSignal): Promise<CommandCodeModel[]> {
@@ -149,8 +160,10 @@ export class GatewayFacts {
       const mayPublish = () => this.state === state && generations.get(source.apiBase) === generation
       state.inflight = (async () => {
         let rows: CommandCodeModel[], ttl = MODEL_CATALOG_TTL_MS
+        let network = false
         try {
           rows = parseCatalog(await this.fetchCatalog(source), source.apiBase)
+          network = true
           if (mayPublish()) {
             publish(source.apiBase, rows)
             await writeCache(source, rows, mayPublish).catch(() => undefined)
@@ -163,6 +176,10 @@ export class GatewayFacts {
         }
         state.rows = rows
         state.expiresAt = Date.now() + ttl
+        // 来源只升不降：一次联网成功后，后来的失败回退仍是「联网过的行」；
+        // 从未联网、只拿到磁盘副本时如实记为磁盘来源，`loaded()` 不会用它当首屏。
+        if (network) state.origin = 'network'
+        else if (state.origin === 'none' && rows.length > 0) state.origin = 'disk'
         return rows
       })().finally(() => { delete state.inflight })
     }

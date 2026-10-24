@@ -49,7 +49,7 @@ import {
 } from '../src/capabilities.ts'
 import type { CommandCodeAdapterDeps, CommandCodeConnectionOptions, SurfaceImagePolicy } from '../src/adapter.ts'
 import type { ContentBlock, GenerateOptions, Message, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { MessageId, ToolCallId, ReasoningEffortId, type LlmError } from '@deepseek-ai/dsh-llm'
+import { MessageId, ToolCallId, ReasoningEffortId, LlmError } from '@deepseek-ai/dsh-llm'
 import type { RequestTimingSummary } from '../src/request-timing.ts'
 import type {
   AttachmentStore,
@@ -8417,4 +8417,53 @@ test('every new-arrival model carries an output ceiling or is left to runtime le
   // map emptied. Muse Wonder takes over the assertion: 131072 against a
   // 1 048 576-token window, so the table is still demonstrably not the window.
   assert.ok(MODEL_OUTPUT_TOKEN_LIMITS.get('meta/muse-wonder-1.0')! < 1_048_576)
+})
+
+// ---------------------------------------------------------------------------
+// 图片预算门与凭据解析的顺序（PR #98 审查修复 R1/R2）
+//
+// 预算门只能在凭据与真实通道落定之后抛：否则一次根本发不出去的请求会先让
+// 宿主把最老的图片持久化卸载（不可逆），然后才暴露「没有凭据」。预算门与
+// 缓存门还必须一次算全、一次抛出，否则宿主会多跑一轮卸载往返，并把
+// cache 溢出报成 budget。
+// ---------------------------------------------------------------------------
+
+/** 61 张 1 MiB 的图：数量超 60、base64 字节超 32 MiB，预算门必触发。 */
+function oversizedImageHistory() {
+  return imageHistory(Array.from({ length: 61 }, () => 1024 * 1024))
+}
+
+test('凭据缺失时图片预算门不抢跑：先报 MISSING_CREDENTIAL，不发请求', async () => {
+  const { messages, images } = oversizedImageHistory()
+  let fetched = false
+  const adapter = makeAdapter({
+    resolveApiKey: async () => { throw new LlmError('未配置 Command Code API 密钥', 'MISSING_CREDENTIAL') },
+    resolveAttachments: () => fakeAttachments(images),
+    fetchImpl: (async () => { fetched = true; return okStream('openai') }) as unknown as typeof fetch,
+    options: OPENAI_OPTIONS,
+  })
+  let error: unknown
+  try {
+    await collect(adapter.stream({
+      provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash', messages,
+    }))
+  } catch (thrown) { error = thrown }
+  assert.equal((error as { code?: string }).code, 'MISSING_CREDENTIAL',
+    '凭据错误必须先于图片错误：否则宿主的持久化卸载会先发生')
+  assert.equal(fetched, false, '凭据缺失的请求不应走到网络')
+})
+
+test('预算与缓存门同时超限只报一次，且报两者较大的缺数', async () => {
+  const { messages, images } = oversizedImageHistory()
+  // 让这 61 张图都落在「当前模型已看过」的区间里：缓存门 count = 61 > 预算门。
+  const answered: Message[] = [...messages, {
+    id: messageId(), role: 'assistant', content: [{ type: 'text', text: '都看过了' }],
+    source: { kind: 'model', provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash' },
+  }]
+  const result = await runAttempts('cli', answered, images, undefined, undefined, true)
+  assert.equal(result.bodies.length, 0, '门未通过前不得发出任何请求')
+  assert.equal((result.error as { code?: string }).code, 'IMAGE_OFFLOAD_REQUIRED')
+  // 旧实现先报预算门、重试后才报缓存门 61；一次算全时直接报两者的最大值 61。
+  assert.match((result.error as { message?: string }).message ?? '', /61 already-seen oldest image/
+  )
 })
