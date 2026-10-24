@@ -9,16 +9,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **请求路径与账户读取的一批性能优化（不改变线上字节）。**
-  - `streamAttempt()` 的凭据解析与正文装配改为并发：两者互不依赖（正文从不携带密钥，健康账号池的解析只读内存），从前却是严格串行，带图请求因此把图片读取与 JSON 装配整个排在 `resolveApiKey()` 之后。与密钥无关的通道判断先算成 `provisionalProtocol`，凭据返回后目标一致即复用，不一致才重建一次（与既有协议回退、账号轮换同价）。图片预算的 `withSurfaceOffload()` 仍先于任何 I/O 执行；CLI 专属的「已看过图片」缓存项在拿到密钥后按真实通道再判一次（只可能抛错，不改变档位）。
-  - `listModels()` 在**本进程已经加载过**该网关目录时不再等一次联网刷新，改用内存中的行立即返回、后台刷新留给下次打开；进程首次加载仍照旧等待。新判据 `GatewayFacts.loaded()` 刻意与 `snapshot()` 区分——后者读磁盘而磁盘缓存没有年龄校验，拿它当首屏会画出不知道多久以前的目录。`resolveModel()` 与 `stream()` 不变，仍等真实刷新。
+- **请求路径与账户读取的一批性能优化（线上字节不变）。**
+  - `streamAttempt()` 的凭据解析与正文装配改为并发：两者互不依赖（正文从不携带密钥，健康账号池的解析只读内存），从前却是严格串行，带图请求因此把图片读取与 JSON 装配整个排在 `resolveApiKey()` 之后。与密钥无关的通道判断先算成 `provisionalProtocol`，凭据返回后目标一致即复用，不一致才重建一次（与既有协议回退、账号轮换同价）。代价是 Go 计划/已学 CLI 通道的账号每次请求会多装配一次正文（线上字节不变，纯 CPU 开销）。图片预算的**会计**仍先于任何 I/O 执行，但**抛错**推迟到凭据与真实通道落定之后：预算门与缓存门一次算全、一次抛出。
+  - `listModels()` 在**本进程联网成功过**该网关目录时不再等一次联网刷新，改用内存中的行立即返回、后台刷新留给下次打开；进程首次加载仍照旧等待。新判据 `GatewayFacts.loaded()` 以「来源」为准而不是「内存里有行」：`snapshot()` 从磁盘灌入的行、以及刷新失败后的空目录都不算热数据（磁盘副本没有年龄校验）。`resolveModel()` 与 `stream()` 不变，仍等真实刷新。
   - `gradeHeaderTimeout()` 的指纹改用**已经序列化好的实发字符串**求摘要（`sha256Hex()`），不再对 `body` 重新 `JSON.stringify`：超时是最常重复的路径，而带图历史可达数 MB。这也更准确——实发字符串就是网关看到的字节，重新 stringify 会在 surrogate 清洗真的删掉过字符时描述到不同的字节，把一次连续超时拆成两条 streak。
   - `toolParametersSchema()` 的根节点结果按 `parameters` 对象身份记忆化（`WeakMap`）。每个通道在每次尝试时都重建工具列表，而账号轮换、协议回退、降档重试都会让同一批 schema 再走一遍。同时纠正原注释「每条路径都返回副本」——`type: 'object'` 快路径一直返回调用方自己的对象，调用方靠它拿到同一个已冻结的 schema。
-  - 用量卡片与选择器的套餐过滤共享账户端点响应：两处读的是同一批端点、同一个账号，成功响应按 `[apiBase, key, 完整 URL]` 记入短命表（`ACCOUNT_FACTS_TTL_MS` 30 秒）。只缓存成功响应（失败必须重试，否则报告的 `failures` 与 `classifyTotalFailure` 结论会描述一次没真正发出的请求）；`/alpha/usage/summary` 明确不共享——那是用户正盯着、旁边写着读取时间的数字。
-  - 用量刷新区分自动与显式路径：`refresh({ auto: true })` 用于账户卡片首屏、面板首屏与面板 tick（injected 面因此分成 `refreshUsageAuto()` 与 `refreshUsage()` 两个入口），可在 `USAGE_AUTO_REFRESH_COALESCE_MS`（5 秒）内复用刚刚读到的结果；按钮、保存、换凭据等显式调用永远重新读取，`fetchedAt` 因此仍如实反映读取时刻。
-  - 面板自动刷新在文档隐藏时跳过读取但照旧重排定时器，重新可见立即补读一次；首屏仍无条件读取。可见性做成可注入接缝（`AutoRefreshVisibility`），非浏览器环境视为始终可见。
+  - 用量卡片与选择器的套餐过滤共享账户端点响应：两处读的是同一批端点、同一个账号，成功响应按 `[apiBase, key, 完整 URL]` 记入短命表（`ACCOUNT_FACTS_TTL_MS` 30 秒）。实际共享的是 `whoami` 与 `subscriptions`——`credits` 的 URL 形状带 `orgId`，两处不同，不会互相命中。只缓存成功响应（失败必须重试，否则报告的 `failures` 与 `classifyTotalFailure` 结论会描述一次没真正发出的请求）；`/alpha/usage/summary` 明确不共享——那是用户正盯着、旁边写着读取时间的数字。
+  - 用量刷新区分自动与显式路径：`refresh({ auto: true })` 用于账户卡片首屏、面板首屏与面板 tick（injected 面因此分成 `refreshUsageAuto()` 与 `refreshUsage()` 两个入口），可在 `USAGE_AUTO_REFRESH_COALESCE_MS`（5 秒）内复用刚刚读到的结果；按钮、保存、换凭据等显式调用不查合并窗口（请求在途时仍按既有 `inFlight` 规则折叠），`fetchedAt` 因此仍如实反映读取时刻。
+  - 面板自动刷新在文档隐藏时跳过读取但照旧重排定时器，重新可见立即补读一次（该补读走 auto，5 秒内仍可能被合并）；首屏仍无条件读取。可见性做成可注入接缝（`AutoRefreshVisibility`），非浏览器环境视为始终可见；监听句柄随循环状态放在模块层，任意卸载顺序都能解绑。
 
-  用例：`tests/adapter.test.ts` 新增「凭据解析与图片读取并行」「目录已在内存时不再等一次联网刷新」「超时定级复用已序列化的正文」「同一份工具 schema 只归一化一次」「用量卡片与选择器共享同一份账户事实」；`tests/panel.test.ts` 与 `tests/usage-client.test.ts` 新增自动/显式刷新与可见性用例。上述新增用例在对应实现回退时均失败。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1120／1120** 通过；`npm run build` 重建 `lib/` 后无差异（说明提交的 bundle 与源码一致）。未在真实宿主中人工验证。（此前一次本机运行的 16 条 `tests/web-search.test.ts` 失败源于 `node_modules` 与 lockfile 漂移——实装 `@deepseek-ai/dsh-web` `0.2.1-alpha.3` 而 lockfile 钉 `0.2.1-rc.2`，按 lockfile 重装即消失，与本批改动无关。）
+### Fixed
+
+- **图片预算门不再抢在凭据之前抛错。** 预算门只做会计，凭据解析失败时先报 `MISSING_CREDENTIAL`：避免宿主对一次根本发不出去的请求先做不可逆的持久化图片卸载。预算门与缓存门在凭据与真实通道落定后一次算全（`max(预算, 缓存)`），不再退化成两步卸载，也不会把 cache 溢出报成 budget。（`src/adapter.ts`）
+- **`loaded()` 只认联网来源。** `snapshot()` 灌入的磁盘行与刷新失败后的空目录都不再被当成选择器首屏：冷启动"先聊天再开选择器"不会画出无年龄校验的旧目录，刷新失败后也不会先闪一次空列表。（`src/gateway-facts.ts`）
+- **可见性监听按任意卸载顺序解绑。** `unsubscribe` 句柄从函数局部提升到模块层，启动循环的 surface 先卸载时不再泄漏 `visibilitychange` 监听。（`src/client/panel.ts`）
+- **账户卡片首屏接线补真实渲染测试。** 新增 `tests/accounts-card-render.test.ts`（`react-test-renderer`）：首屏必须调 `onRefreshAuto()`、刷新按钮必须调 `onRefresh()`；把组件改回旧接线时该用例失败。此前只有"两个入口存在"的断言，回退后测试仍全绿。
+
+  用例：`tests/adapter.test.ts` 新增「凭据解析与图片读取并行」「目录已在内存时不再等一次联网刷新」「超时定级复用已序列化的正文」「同一份工具 schema 只归一化一次」「用量卡片与选择器共享同一份账户事实」「凭据缺失时预算门不抢跑」「双超限一次报数」；`tests/gateway-facts.test.ts` 新增 4 条 `loaded()` 来源判据；`tests/panel.test.ts` 与 `tests/usage-client.test.ts` 新增自动/显式刷新、可见性与任意卸载顺序解绑用例；`tests/accounts-card-render.test.ts` 新增 2 条真实渲染接线用例。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1125／1125** 通过；`npm run build` 重建 `lib/`。未在真实宿主中人工验证。
+
 ## [0.15.4] - 2026-10-24
 
 ### Changed

@@ -282,11 +282,18 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
     dozens of screenshots) used to cross the cap once and then fail EVERY later request on this route with
     HTTP 413, while the same conversation worked on another provider. `stream()` therefore builds every
     body from a PROJECTED history, never the raw one, and the offload set is a DURABLE session fact:
-    `withSurfaceOffload()` renders the surface's `offloaded` marks through the engine's
-    `projectOffloadedImages` (so an evicted image can never be re-sent as pixels) and an over-budget history
-    FAILS with `IMAGE_OFFLOAD_REQUIRED` + the count from `requiredImageOffload`, which the default
+    `projectSurfaceBudget()` renders the surface's `offloaded` marks through the engine's
+    `projectOffloadedImages` (so an evicted image can never be re-sent as pixels) and counts what the byte
+    budget still needs; `withSurfaceOffload()` is the one-shot form (byte budget + CLI cache gate) used by
+    the 413 downshift and the protocol fallback, and an over-budget history FAILS with
+    `IMAGE_OFFLOAD_REQUIRED` + the count from `requiredImageOffload`, which the default
     `dsh-compaction-image-offload` plugin records as one `image/offload` event and retries — the omission
-    then survives restore and fork, and the token meter stops counting evicted images as context. Those
+    then survives restore and fork, and the token meter stops counting evicted images as context. On the
+    stream path the accounting and the throw are deliberately SEPARATE: the count runs before any I/O (a
+    history that must commit an offload costs neither a credential round trip nor an image read), but the
+    ONE error (`max(byte budget, CLI cache gate)`) is raised only after the credential and the real
+    transport are known — a request that cannot authenticate must report `MISSING_CREDENTIAL` instead of
+    first making the host offload images irreversibly. Those
     three symbols are STATIC imports of `@deepseek-ai/dsh-llm` (they are the reason the peer range is pinned
     so tightly: a named import of an absent export is a link-time failure that takes the whole plugin down,
     issue #43). `REQUEST_IMAGE_BUDGETS` is a two-rung ladder: rung 0 is the standing budget (32 MiB base64 /

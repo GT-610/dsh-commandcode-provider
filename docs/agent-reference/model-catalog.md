@@ -293,12 +293,14 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
     one rejected attempt), and it costs three requests per account per TTL, cached per key exactly like the
     single-account path (an unknown account counts as 'may include it', the same fail-open rule, and a host
     without the seam falls back to the serving key).
-  - **Reading the catalog never blocks on the network once this process has it.** `listModels()` asks
-    `GatewayFacts.loaded()` for the rows already in memory; only a source this process has never loaded
-    awaits `refresh()`. A warm source refreshes in the background for the NEXT open. The distinction is
-    memory-only on purpose: `snapshot()` reads the on-disk cache, which carries no age check, so serving it
-    as a first paint would draw a catalog of unknown vintage. `resolveModel()` and `stream()` still await a
-    real refresh — they must not route on a guess.
+  - **Reading the catalog never blocks on the network once this process has FETCHED it.** `listModels()` asks
+    `GatewayFacts.loaded()` for rows this process successfully fetched; only a source that never completed a
+    network refresh awaits `refresh()`. A warm source refreshes in the background for the NEXT open. The
+    source matters, not just "rows in memory": `snapshot()` loads the on-disk cache into the SAME state for
+    the generation path, and that disk copy carries no age check — serving it as a first paint would draw a
+    catalog of unknown vintage. An empty row set (a failed refresh inside its retry window) is not warm data
+    either; it falls back to `refresh()` instead of painting an empty picker. `resolveModel()` and `stream()`
+    still await a real refresh — they must not route on a guess.
   - **The picker and the usage card share the account endpoints.** `getUsage()` and `fetchBillingAccess()`
     both read `/alpha/whoami`, then credits + subscriptions in parallel, for the same key. Successful
     responses are memoized per `[apiBase, key, exact URL]` for `ACCOUNT_FACTS_TTL_MS` (30 s), so whichever
