@@ -27,12 +27,15 @@ import assert from 'node:assert/strict'
 import type { SettingsPageState, StagedField } from '../src/client/settings.ts'
 import { DEFAULT_API_BASE, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '../src/adapter.ts'
 import { DEFAULT_TRANSPORT_MAX_RETRIES } from '../src/transport-retry.ts'
+import type { CommandCodeUsageReport } from '../src/adapter.ts'
+import { zh } from '../src/client/locales.ts'
 
 const {
   accountIssues,
   addAccountPanelView,
   advancedGroupInvalid,
   advancedOverriddenCount,
+  balanceLabelText,
   FIELD_DEFAULTS,
   invalidGroups,
   modelsGroupInvalid,
@@ -220,4 +223,29 @@ test('addAccountPanelView: a settled enrollment returns the panel to idle', () =
   for (const phase of ['finished', 'failed', 'cancelled', 'cleanup-needed']) {
     assert.equal(addAccountPanelView({ phase, mode: 'browser', keyReady: false, disabled: false }).actions, 'start', phase)
   }
+})
+
+// 账户卡片余额标签行：账期只在「月额度剩余」旁出现一次，取代原独立的
+// 「官方账期用量」行与底部重复的「账期截止」。
+test('balance label carries the billing period once, falling back to the plan end', () => {
+  const t = ((key: keyof typeof zh) => zh[key]) as Parameters<typeof balanceLabelText>[1]
+  const start = Date.UTC(2026, 9, 15)
+  const end = Date.UTC(2026, 10, 15)
+  const range = `${new Date(start).toLocaleDateString()} – ${new Date(end).toLocaleDateString()}`
+  const endDate = new Date(end).toLocaleDateString()
+  const credits = { monthlyCredits: 46.92, purchasedCredits: 0, freeCredits: 0 } as NonNullable<CommandCodeUsageReport['credits']>
+  const plan = { planId: 'p', name: 'GOAT', status: 'active', monthlyCredits: 70, currentPeriodStart: start, currentPeriodEnd: end } as NonNullable<CommandCodeUsageReport['plan']>
+  const usage = { periodStart: start } as NonNullable<CommandCodeUsageReport['usage']>
+
+  // 起点对齐：完整区间。
+  assert.equal(balanceLabelText({ credits, plan, usage }, t), `月额度剩余 · ${range}`)
+  // 起点对不上或用量汇总缺失：退回订阅截止日，不再显示「统计周期未确认」。
+  assert.equal(balanceLabelText({ credits, plan, usage: { periodStart: start + 1 } as NonNullable<CommandCodeUsageReport['usage']> }, t), `月额度剩余 · 账期截止 ${endDate}`)
+  assert.equal(balanceLabelText({ credits, plan }, t), `月额度剩余 · 账期截止 ${endDate}`)
+  // 没有订阅：只剩标签本身。
+  assert.equal(balanceLabelText({ credits, usage }, t), '月额度剩余')
+  // 余额没取到：区间前补「官方账期用量」，截止日照旧，都没有则为空（整行不画）。
+  assert.equal(balanceLabelText({ plan, usage }, t), `官方账期用量 ${range}`)
+  assert.equal(balanceLabelText({ plan }, t), `账期截止 ${endDate}`)
+  assert.equal(balanceLabelText({}, t), '')
 })

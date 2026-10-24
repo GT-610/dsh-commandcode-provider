@@ -359,7 +359,9 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   悬停转 label-primary）；行级下拉与输入框圆角 8px；保存条改为 22px 全圆，与内部 36px 胶囊同心。文字：本页开启
   灰度抗锯齿，说明、摘要、数字块标签等由 label-tertiary 改为 label-secondary（Models 页卡片共用的 `cc-hint`、
   `cc-badgeMuted`、`cc-input` 不变）。账户展开区首行是「月额度剩余」大号数字（`cc-balance`，20/600），已购与
-  赠送降为其右侧小字；剩余为 0 时数字标红并提示已购与赠送将无法使用（`usageMonthlyDepleted`）。
+  赠送降为其右侧小字；剩余为 0 时数字标红并提示已购与赠送将无法使用（`usageMonthlyDepleted`）。标签行左侧
+  接账期（区间对齐时为完整区间，否则为订阅截止日），右侧为「更新于」；原独立的「官方账期用量」行与底部
+  「账期截止」已并入，底部只在有失败时显示「部分数据未取到」（2026-10-24）。
 - **设置页对齐宿主原生（2026-10-21，实测）**：行样式取自宿主「通用设置」渲染后的真实样式——行上下 16px、
   每行下方 0.5px `border-l2` 细线（组内最后一行除外）、文字列与控件留 48px；行级下拉与输入框用宿主选择器的
   形状（36px、12px 圆角、`bg-module-platform` 填充、无描边，类 `cc-fieldInput`），数字框单位写在框外并占

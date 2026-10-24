@@ -262,13 +262,14 @@ export const PAGE_CSS = `
 .cc-usageStats{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;display:grid}
 .cc-usageStatsActivity{grid-template-columns:repeat(4,minmax(0,1fr))}
 @container (max-width:460px){.cc-usageStatsActivity{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.cc-balance{flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:4px 16px;display:flex}
-.cc-balanceMain{flex-direction:column;gap:2px;display:flex}
+.cc-balance{flex-direction:column;gap:2px;display:flex}
+/* 两行左右分栏：标签行左账期、右更新时间；数值行左剩余、右已购与赠送。 */
+.cc-balanceRow{flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 16px;display:flex}
 .cc-balanceLabel{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
 .cc-balanceValue{color:var(--dsw-alias-label-primary);font-size:20px;font-weight:600;line-height:28px;font-variant-numeric:tabular-nums}
 .cc-balanceSub{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
 .cc-balanceEmpty .cc-balanceValue{color:var(--dsw-alias-state-error-primary)}
-.cc-balanceNote{flex-basis:100%;margin:0;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
+.cc-balanceNote{margin:0;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
 .cc-usageStat{min-width:0;flex-direction:column;gap:2px;display:flex;padding:10px 12px;border-radius:8px;background:var(--dsw-alias-bg-module-platform)}
 .cc-usageStatLabel{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
 .cc-usageStatValue{color:var(--dsw-alias-label-primary);font-size:16px;font-weight:500;line-height:24px;font-variant-numeric:tabular-nums}
@@ -283,9 +284,6 @@ export const PAGE_CSS = `
 .cc-usageBarFill{background:var(--dsw-alias-brand-primary);border-radius:999px;height:100%;transition:width .3s ease}
 .cc-usageBarFillWarn{background:var(--dsw-alias-state-error-primary)}
 .cc-usageWindowReset{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:18px}
-.cc-usageMeta{align-items:center;gap:8px;display:flex}
-.cc-usageMetaSpacer{flex:1}
-.cc-usageUpdated{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:18px}
 .cc-usagePartial{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px;line-height:18px}
 .cc-notices{flex-direction:column;gap:8px;display:flex;margin-bottom:12px}
 .cc-section>.cc-notice{margin-top:12px}

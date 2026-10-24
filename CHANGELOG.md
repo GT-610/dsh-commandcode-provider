@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - 用量卡片与选择器的套餐过滤共享账户端点响应：两处读的是同一批端点、同一个账号，成功响应按 `[apiBase, key, 完整 URL]` 记入短命表（`ACCOUNT_FACTS_TTL_MS` 30 秒）。实际共享的是 `whoami` 与 `subscriptions`——`credits` 的 URL 形状带 `orgId`，两处不同，不会互相命中。只缓存成功响应（失败必须重试，否则报告的 `failures` 与 `classifyTotalFailure` 结论会描述一次没真正发出的请求）；`/alpha/usage/summary` 明确不共享——那是用户正盯着、旁边写着读取时间的数字。
   - 用量刷新区分自动与显式路径：`refresh({ auto: true })` 用于账户卡片首屏、面板首屏与面板 tick（injected 面因此分成 `refreshUsageAuto()` 与 `refreshUsage()` 两个入口），可在 `USAGE_AUTO_REFRESH_COALESCE_MS`（5 秒）内复用刚刚读到的结果；按钮、保存、换凭据等显式调用不查合并窗口（请求在途时仍按既有 `inFlight` 规则折叠），`fetchedAt` 因此仍如实反映读取时刻。
   - 面板自动刷新在文档隐藏时跳过读取但照旧重排定时器，重新可见立即补读一次（该补读走 auto，5 秒内仍可能被合并）；首屏仍无条件读取。可见性做成可注入接缝（`AutoRefreshVisibility`），非浏览器环境视为始终可见；监听句柄随循环状态放在模块层，任意卸载顺序都能解绑。
+- **设置页账户卡片：账期与更新时间并入余额标签行。** 「月额度剩余」标签右接账期区间、同行右侧显示「更新于」；原单独一行的「官方账期用量 …」与底部重复的「账期截止」删除。账期未对齐时标签改接订阅自身的「账期截止」日期，不再显示「统计周期未确认」（额度面板不变）；余额没取到时该行仍保留，区间前补「官方账期用量」。底部只在部分接口失败时显示「部分数据未取到」。
 
 ### Fixed
 

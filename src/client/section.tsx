@@ -572,14 +572,31 @@ function UsageWindow({
   )
 }
 
+/**
+ * Left text of the balance label row: the billing period, stated once per card.
+ * 用量汇总与订阅起点对齐时给完整区间；对不上（或用量汇总没取到）时退回订阅
+ * 自身的截止日，它不依赖对齐也可靠。余额没取到时没有「月额度剩余」可挂，完整
+ * 区间前补回「官方账期用量」，避免一串裸日期没有上下文。
+ */
+export function balanceLabelText(
+  report: Pick<CommandCodeUsageReport, 'credits' | 'plan' | 'usage'>,
+  t: Translate<SettingsCommandCodeKey>,
+): string {
+  const plan = report.plan
+  const usagePeriod = formatUsageBillingPeriod(report.usage?.periodStart, plan?.currentPeriodStart, plan?.currentPeriodEnd)
+  const periodText = usagePeriod !== ''
+    ? usagePeriod
+    : plan !== undefined && plan.currentPeriodEnd > 0
+      ? `${t('usagePeriodEnd')} ${new Date(plan.currentPeriodEnd).toLocaleDateString()}`
+      : ''
+  if (report.credits !== undefined) return periodText !== '' ? `${t('usageMonthlyLeft')} · ${periodText}` : t('usageMonthlyLeft')
+  return usagePeriod !== '' ? `${t('usageBillingPeriod')} ${usagePeriod}` : periodText
+}
+
 /** One pool account's facts (identity, totals, credits, window limits). */
 function AccountReport({ entry, fetchedAt, t, headless = false }: {
   entry: CommandCodeAccountUsage
-  /**
-   * When the shared usage snapshot was fetched — shares the account's bottom
-   * meta row with the billing period end so the two timestamps occupy one
-   * line (period/partial facts left, fetch freshness right).
-   */
+  /** When the shared usage snapshot was fetched; shown at the right of the balance label row. */
   fetchedAt?: number | undefined
   t: Translate<SettingsCommandCodeKey>
   /** Omit the identity header (the account row already shows it). */
@@ -592,9 +609,11 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
   const plan = report.plan
   const planName = plan?.name ?? ''
   const planStatus = plan !== undefined && plan.status !== '' && plan.status !== 'active' ? plan.status : ''
-  const showPeriod = plan !== undefined && plan.currentPeriodEnd > 0
   const showPartial = report.failures.length > 0 && report.blocked === undefined
-  const usagePeriod = formatUsageBillingPeriod(report.usage?.periodStart, plan?.currentPeriodStart, plan?.currentPeriodEnd)
+  const label = balanceLabelText(report, t)
+  const updatedText = fetchedAt === undefined
+    ? ''
+    : `${t('usageUpdated')} ${new Date(fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`
 
   return (
     <div className="cc-accountReport">
@@ -626,27 +645,33 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
           decides whether requests go through, and once it reaches zero the
           purchased and free balances can no longer be spent — so those two
           ride under it as context, not beside it as peers. `monthlyCredits` is
-          what is LEFT (see MonthlyBalance); an omitted figure reads "—". */}
-      {credits !== undefined ? (() => {
-        const monthlyKnown = credits.monthlyReported !== false
-        const depleted = monthlyKnown && credits.monthlyCredits <= 0
+          what is LEFT (see MonthlyBalance); an omitted figure reads "—".
+          Its label row also carries the billing period (left) and the fetch
+          time (right), so the card states "when" once, above every number. */}
+      {(() => {
+        const monthlyKnown = credits !== undefined && credits.monthlyReported !== false
+        const depleted = credits !== undefined && monthlyKnown && credits.monthlyCredits <= 0
+        // 余额没取到时标签行仍要交代账期与更新时间，两者都没有才整块不画。
+        if (label === '' && updatedText === '') return null
         return (
           <div className={depleted ? 'cc-balance cc-balanceEmpty' : 'cc-balance'}>
-            <div className="cc-balanceMain">
-              <span className="cc-balanceLabel">{t('usageMonthlyLeft')}</span>
-              <span className="cc-balanceValue">{monthlyKnown ? formatMoney(Math.max(0, credits.monthlyCredits)) : '—'}</span>
+            <div className="cc-balanceRow">
+              <span className="cc-balanceLabel">{label}</span>
+              {updatedText !== '' ? <span className="cc-balanceLabel">{updatedText}</span> : null}
             </div>
-            <span className="cc-balanceSub">
-              {`${t('usagePurchased')} ${credits.purchasedReported === false ? '—' : formatMoney(credits.purchasedCredits)} · ${t('usageFree')} ${credits.freeReported === false ? '—' : formatMoney(credits.freeCredits)}`}
-            </span>
+            {credits !== undefined ? (
+              <div className="cc-balanceRow">
+                <span className="cc-balanceValue">{monthlyKnown ? formatMoney(Math.max(0, credits.monthlyCredits)) : '—'}</span>
+                <span className="cc-balanceSub">
+                  {`${t('usagePurchased')} ${credits.purchasedReported === false ? '—' : formatMoney(credits.purchasedCredits)} · ${t('usageFree')} ${credits.freeReported === false ? '—' : formatMoney(credits.freeCredits)}`}
+                </span>
+              </div>
+            ) : null}
             {depleted ? <p className="cc-balanceNote" role="status">{t('usageMonthlyDepleted')}</p> : null}
           </div>
         )
-      })() : null}
+      })()}
 
-      {report.usage !== undefined ? (
-        <p className="cc-usageUpdated">{usagePeriod ? `${t('usageBillingPeriod')} ${usagePeriod}` : t('usagePeriodUnknown')}</p>
-      ) : null}
       {report.usage !== undefined ? (
         <div className="cc-usageStats cc-usageStatsActivity">
           {/* 计数按 K/M/B 紧凑显示：四列等宽窄卡里，原始位数会先把右侧的「失败 …」
@@ -688,19 +713,8 @@ function AccountReport({ entry, fetchedAt, t, headless = false }: {
         </div>
       ) : null}
 
-      {showPeriod || showPartial || fetchedAt !== undefined ? (
-        <div className="cc-usageMeta">
-          {showPeriod ? (
-            <p className="cc-usageUpdated">{t('usagePeriodEnd')} {new Date(plan.currentPeriodEnd).toLocaleDateString()}</p>
-          ) : null}
-          {showPartial ? (
-            <p className="cc-usagePartial" title={report.failures.join('; ')}>{t('usagePartial')}</p>
-          ) : null}
-          <span className="cc-usageMetaSpacer" />
-          {fetchedAt !== undefined ? (
-            <p className="cc-usageUpdated">{t('usageUpdated')} {new Date(fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</p>
-          ) : null}
-        </div>
+      {showPartial ? (
+        <p className="cc-usagePartial" title={report.failures.join('; ')}>{t('usagePartial')}</p>
       ) : null}
     </div>
   )
