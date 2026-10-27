@@ -20,7 +20,10 @@
  * efforts `low/high/max`, Go tier, `$2/$10/$0.2`). The 1.88.0 artifact does not
  * name that row yet; the default catalog, `?view=client`, the models docs page
  * and the pricing page all do, so the capability fields come from the catalog
- * as usual. Keeping the snapshot in its own module
+ * as usual. The 2026-10-27 check finds the CLI still at 1.88.0 and one more
+ * catalog-only addition, GPT-6.1 Terra (`gpt-6.1-terra`): 1.05M context, text +
+ * image, the same five-level effort set, Pro tier, `$1/$5` up to a 272K context
+ * step and `$2/$7.5` beyond. Keeping the snapshot in its own module
  * confines those frequent sync diffs here: src/adapter.ts holds only the stable
  * wire/runtime logic. The read helpers live here too, for the same reason.
  *
@@ -191,6 +194,12 @@ export const KNOWN_EFFORTS: Readonly<Record<string, readonly string[]>> = {
   // per the official registry and inputModalities:["text","image"], and the
   // same five-level set as its `gpt-6-astra` / `gpt-6-sol` predecessors.
   'gpt-6.1-sol': ['low', 'medium', 'high', 'xhigh', 'max'],
+  // 2026-10-27 (catalog-only sync): `?view=client` serves
+  // `reasoningEfforts:["low","medium","high","xhigh","max"]` and the pricing
+  // page carries `caps.reasoning: true`; the 1.88.0 artifact does not name the
+  // row. Same five-level set as its `gpt-6.1-sol` predecessor; do not inherit
+  // future levels without re-checking the catalog.
+  'gpt-6.1-terra': ['low', 'medium', 'high', 'xhigh', 'max'],
   // command-code@1.82.2. The paid graduation of the `ling-3.1-flash:free`
   // promo this table used to carry: that row is retired in the same release
   // (the CLI ships it `hidden`, it lost its effort list, and it is gone from
@@ -300,6 +309,10 @@ export const KNOWN_IMAGE_MODELS: ReadonlySet<string> = new Set([
   // command-code@1.71.0; Vision per the official registry and the CLI's
   // inputModalities:["text","image"] — unlike the text-only Ling free models.
   'gpt-6.1-sol',
+  // 2026-10-27 (catalog-only sync): inputModalities:["text","image"] in the live
+  // `?view=client` catalog; the pricing page (`caps.vision: true`) and the
+  // models docs page both mark the row Vision.
+  'gpt-6.1-terra',
   // command-code@1.44.0 added Muse Spark 1.3 and its Contributor sibling; both
   // are Vision per the official registry and inputModalities.
   'meta/muse-spark-1.1',
@@ -833,10 +846,9 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * `/docs/plans/max` and `/docs/resources/pricing-limits`). Each plan's model
  * list is a superset of the one below it: Go ⊂ GOAT ⊂ Pro ⊂ Provider/Max.
  * Models absent from every plan list (Claude Opus/Fable, Fugu Ultra) are
- * Provider-tier. Re-verified at command-code@1.88.0 (2026-10-24) against the
- * live `?view=client` catalog: 105 ids, still a strict superset chain. Mistral
- * Large 4
- * (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair
+ * Provider-tier. Re-verified at command-code@1.88.0 (2026-10-27) against the
+ * live `?view=client` catalog: 106 ids, still a strict superset chain. Mistral
+ * Large 4 (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair
  * added Claude Haiku 5.5 at Pro and the free Glyph Cluster preview at Go.
  * 1.79.2 lowers Haiku 5.5's minimum plan to GOAT; 1.80.0 adds Muse Wonder at
  * Max; 1.82.0 adds Gemini 4 Argon at Pro and nothing else moves. The 1.82.4
@@ -845,7 +857,8 @@ export const DEFAULT_MESSAGES_MAX_TOKENS = 64_000
  * which left the live catalog. Every other
  * tier is unchanged. The 1.86.1 sync (2026-10-21) adds only the Ornith 1.5 122B
  * launch pair at Go; the 1.87.1 check (2026-10-22) adds no model and moves no
- * tier, and the 2026-10-24 check adds only Kimi K3.1 Pro at Go.
+ * tier, the 2026-10-24 check adds only Kimi K3.1 Pro at Go, and the 2026-10-27
+ * check adds only GPT-6.1 Terra at Pro.
  * The only removals since 1.49.0 are the two retired stealth previews (Pixel
  * Canary at 1.73.1, Space Bunny Alpha at 1.74.3), Ling 3.0 Flash Sante
  * (2026-10-16) and the retired Cat Jam preview (2026-10-20). Per-entry tags
@@ -1014,7 +1027,7 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   // command-code@1.62.0; GOAT and above, the same split as its Grok 4.7
   // sibling. Its two cheaper V2.6 siblings are Go, above.
   'xiaomi/mimo-v2.6-pro-ultraspeed': 'goat',
-  // --- Pro (15 more) ---
+  // --- Pro (16 more) ---
   'claude-haiku-4-5-20251001': 'pro',
   'claude-sonnet-4-6': 'pro',
   'claude-sonnet-5': 'pro',
@@ -1032,6 +1045,10 @@ export const KNOWN_PLANS: Readonly<Record<string, string>> = {
   'gpt-5.6-terra': 'pro',
   // command-code@1.64.0; Pro and above (individual-go/goat false).
   'gpt-6-sol': 'pro',
+  // 2026-10-27 (catalog-only sync): `minimumPlan: "individual-pro"` in the live
+  // `?view=client` catalog; the pricing page's embedded availability sets
+  // individual-go / go-v1 / goat false and Pro and above true.
+  'gpt-6.1-terra': 'pro',
   'meta/muse-spark-1.1': 'pro',
   // --- Provider (8) ---
   // command-code@1.40.0; Provider/Max exactly like its `claude-fable-5`

@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - 面板自动刷新在文档隐藏时跳过读取但照旧重排定时器，重新可见立即补读一次（该补读走 auto，5 秒内仍可能被合并）；首屏仍无条件读取。可见性做成可注入接缝（`AutoRefreshVisibility`），非浏览器环境视为始终可见；监听句柄随循环状态放在模块层，任意卸载顺序都能解绑。
 - **设置页账户卡片：账期与更新时间并入余额标签行。** 「月额度剩余」标签右接账期区间、同行右侧显示「更新于」；原单独一行的「官方账期用量 …」与底部重复的「账期截止」删除。账期未对齐时标签改接订阅自身的「账期截止」日期，不再显示「统计周期未确认」（额度面板不变）；余额没取到时该行仍保留，区间前补「官方账期用量」。底部只在部分接口失败时显示「部分数据未取到」。
 
+- **同步上游两处：Command Code 目录新增 `gpt-6.1-terra`，DSH `0.2.1-rc.4` 补入验证矩阵。**
+  - **Command Code（CLI 版本不变，仍 `1.88.0`）**：2026-10-27 复核 npm `latest` 与官网 changelog 均无新 CLI 版本（最新条目仍是 `1.87.3`）；服务端目录 `?view=client` 的 `catalogVersion` 由 `f41a48ed…` 变为 `7f405e24…`，默认视图 93 → 94、client 视图 105 → 106，唯一新增行是 `gpt-6.1-terra`（GPT-6.1 Terra）：1,050,000 上下文、文本 + 图像、推理档位 `low`/`medium`/`high`/`xhigh`/`max`、最低计划 Pro、`$1/$5`（≤272K 上下文）与 `$2/$7.5`（>272K）、缓存读取 `$0.05`/`$0.1`、缓存写入 `$1.25`/`$2.5`、月度额度 Go `$6`／GOAT `$20`／Pro `$20`，ZDR 默认覆盖，无促销、无峰值时段、无输出上限公布值。官方 models 页与 pricing 页均已上架，`1.88.0` 的 CLI 注册表尚未收录（审计 `incomplete`，能力字段以 `?view=client` 目录为准）。快照 +1：`KNOWN_PLANS` 93 → 94、`KNOWN_EFFORTS` 66 → 67、`KNOWN_IMAGE_MODELS` 72 → 73、内置价格行 93 → 94；ZDR 例外集（18）、自动思考模型表（16）、订阅表（9）、促销（4）、输出上限表（79）不变。`scripts/sync-model-prices.mjs` 重跑（页面 94 行，diff 仅新增该行）。
+  - **DSH `0.2.1-rc.4`**：npm `next` 于北京时间 2026-10-26 23:28（`2026-10-26T15:28:13Z`）从 `0.2.1-rc.3` 前进到 `0.2.1-rc.4`，`latest` 仍是 `0.2.1-rc.2`；GitHub 无对应 tag/release（均 404），`master` 停在 10-23，产物内构建哈希 `ec17a2c` 在公开仓库不可见——官方没有发布说明。产物级全量比对 235 个双版本包，实质变化仅 4 处：`dsh-mcp-client` 的资源能力探测（服务器未声明 `resources` 时直接返回空列表）、`dsh-client-ui-conversation` 的 View 标签提示框（按字符宽度估算、仅溢出时显示）与「更多会话视图」文案精简、`dsh-llm-deepseek-account` 的一条日志级别（`console.info` → `console.error`）、`dsh-mcp-resources` 的文档；另有 3 个包仅构建元数据（commit 短哈希、版本串）变化。插件导入的宿主包（`llm`／`settings`／`credentials`／`client-*`／`web`／`typert`／`api-remotes`／`attachment`／`commands`／`timeout`／`launch-environment`／`app-boot`）全部零功能变化。`dsh.compatibility.dshReleases` 补入 `0.2.1-rc.4`（三条实测记录），`test:engine`／`test:install` 矩阵随之变为 3 个引擎。
+
 ### Fixed
 
 - **图片预算门不再抢在凭据之前抛错。** 预算门只做会计，凭据解析失败时先报 `MISSING_CREDENTIAL`：避免宿主对一次根本发不出去的请求先做不可逆的持久化图片卸载。预算门与缓存门在凭据与真实通道落定后一次算全（`max(预算, 缓存)`），不再退化成两步卸载，也不会把 cache 溢出报成 budget。（`src/adapter.ts`）
@@ -30,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   用例：`tests/adapter.test.ts` 新增「凭据解析与图片读取并行」「目录已在内存时不再等一次联网刷新」「超时定级复用已序列化的正文」「同一份工具 schema 只归一化一次」「用量卡片与选择器共享同一份账户事实」「凭据缺失时预算门不抢跑」「双超限一次报数」；`tests/gateway-facts.test.ts` 新增 4 条 `loaded()` 来源判据；`tests/panel.test.ts` 与 `tests/usage-client.test.ts` 新增自动/显式刷新、可见性与任意卸载顺序解绑用例；`tests/accounts-card-render.test.ts` 新增 2 条真实渲染接线用例。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1125／1125** 通过；`npm run build` 重建 `lib/`。未在真实宿主中人工验证。
 
   issue #102 的用例：`tests/random-id.test.ts` 3 条——安全上下文走平台 `randomUUID`（哨兵值分辨分支，不走自行拼装）、非安全上下文退回 `getRandomValues` 时 100 个身份互不相同且为 v4、非安全上下文下构造 `AccountEnrollmentController` 并把页面身份带给宿主。三处定向变异各命中一条：关闭快速路径只失败第一条，把版本位置 0 只失败后两条，把默认 `newId` 改回 `() => crypto.randomUUID()` 只失败第三条。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1129／1129** 通过；`npm run build` 重建 `lib/`（`lib/client.js` 含 `randomId`，`lib/index.js` 与 `lib/index.d.ts` 字节不变）。未在真实 NAS／局域网环境人工验证。
+
+   **本轮（2026-10-27 上游同步）验证**：`npm run typecheck` 退出码 0；`npm test` **1126／1126** 通过、0 失败；`npm run build` 两段 `Build complete`，`lib/index.js` 已重建（含 `gpt-6.1-terra`）；`npm run test:engine` **3/3**（`0.2.1-rc.2`／`0.2.1-rc.3`／`0.2.1-rc.4`，宿主准入 preflight 全部放行，末行 `engine-load smoke passed on all 3 declared-compatible engines`）；`npm run test:install` **3/3**（pnpm 10.34.5）；`npm run test:pack` 16 文件（版本 0.15.4）。未做真实账号登录、付费生成、服务端协议验证与浏览器渲染。
 
 ## [0.15.4] - 2026-10-24
 

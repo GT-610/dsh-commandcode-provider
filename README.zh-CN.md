@@ -61,7 +61,7 @@
 dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@latest
 ```
 
-本构建准入 **dsh `>=0.2.1-rc.2 <0.2.2-0`** —— `0.2.1` 通道中 `0.2.1-rc.2` 及以后的每个 RC。`0.2.1-rc.2` 是 npm `latest` 指向的版本，`0.2.1-rc.3` 挂在 `next`；两者都跑过完整引擎矩阵（`npm run test:engine`、`npm run test:install`）。更晚的 `0.2.1-rc.4` 无需更新插件即可准入，但在 `dsh.compatibility.dshReleases` 补上记录之前不算已验证。下一个 minor 被刻意排除（含 `0.2.2-rc.*`）—— 区间上界写成 `<0.2.2-0` 正是为了这一点。使用 `0.2.0-rc.2`、`0.2.1-alpha.5` 或更早版本的配置需先升级引擎，再安装本构建。兼容性细节 —— `engines.dsh` 准入规则、按引擎配对的包版本、验证证据 —— 见[引擎兼容](docs/agent-reference/engine-compatibility.md)。
+本构建准入 **dsh `>=0.2.1-rc.2 <0.2.2-0`** —— `0.2.1` 通道中 `0.2.1-rc.2` 及以后的每个 RC。`0.2.1-rc.2` 是 npm `latest` 指向的版本，`0.2.1-rc.4` 挂在 `next`；`0.2.1-rc.2`、`0.2.1-rc.3` 与 `0.2.1-rc.4` 都跑过完整引擎矩阵（`npm run test:engine`、`npm run test:install`）。更晚的 `0.2.1-rc.5` 无需更新插件即可准入，但在 `dsh.compatibility.dshReleases` 补上记录之前不算已验证。下一个 minor 被刻意排除（含 `0.2.2-rc.*`）—— 区间上界写成 `<0.2.2-0` 正是为了这一点。使用 `0.2.0-rc.2`、`0.2.1-alpha.5` 或更早版本的配置需先升级引擎，再安装本构建。兼容性细节 —— `engines.dsh` 准入规则、按引擎配对的包版本、验证证据 —— 见[引擎兼容](docs/agent-reference/engine-compatibility.md)。
 
 **更早的 dsh 版本**已不再支持：覆盖 dsh 0.1.7 的最后一个插件版本是 `0.11.17`，0.1.2–0.1.6 线的最后一个版本是 `0.11.11`，0.5.0 时代 Harness 线的最后一个版本是 `0.9.1` —— 三者都按精确版本安装，且都不再维护。
 

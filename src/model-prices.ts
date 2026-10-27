@@ -191,6 +191,7 @@ const MODEL_PRICE_ROWS: readonly ModelPriceRow[] = [
   { id: 'gpt-6-luna', rates: [0.1, 0.5, 0.01, 0.125], allowance: { go: 6, goat: 20, pro: 30 }, contextTiers: [{"maxContext":272000,"rates":[0.1,0.5,0.01,0.125]},{"rates":[0.2,0.75,0.02,0.25]}] },
   { id: 'gpt-6-sol', rates: [2, 10, 0.2, 2.5], allowance: { go: 6, goat: 20, pro: 20 }, contextTiers: [{"maxContext":272000,"rates":[2,10,0.2,2.5]},{"rates":[4,15,0.4,5]}] },
   { id: 'gpt-6.1-sol', rates: [2, 10, 0.1, 2.5], allowance: { go: 6, goat: 20, pro: 20 }, contextTiers: [{"maxContext":272000,"rates":[2,10,0.1,2.5]},{"rates":[4,15,0.2,5]}] },
+  { id: 'gpt-6.1-terra', rates: [1, 5, 0.05, 1.25], allowance: { go: 6, goat: 20, pro: 20 }, contextTiers: [{"maxContext":272000,"rates":[1,5,0.05,1.25]},{"rates":[2,7.5,0.1,2.5]}] },
   { id: 'grok-4.5', rates: [2, 6, 0.5], allowance: { go: 6, goat: 20, pro: 30 } },
   { id: 'grok-4.6', rates: [2, 6, 0.5], allowance: { go: 6, goat: 20, pro: 30 }, contextTiers: [{"maxContext":200000,"rates":[2,6,0.5]},{"rates":[4,12,1]}] },
   { id: 'grok-4.7', rates: [2, 6, 0.5], allowance: { go: 6, goat: 20, pro: 30 }, contextTiers: [{"maxContext":200000,"rates":[2,6,0.5]},{"rates":[4,12,1]}] },

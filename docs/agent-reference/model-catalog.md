@@ -75,6 +75,19 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   `?view=client` as usual. Snapshots: plans 92 → 93, efforts 65 → 66, image 71 → 72, vendored
   price rows 92 → 93; ZDR stays 18, output-limit rows stay 79, deals stay 4, thinking stays 16.
 
+  **Follow-up check (2026-10-27, CLI stays 1.88.0):** npm `latest` and the official changelog still
+  name no new CLI release (the newest entry is still `1.87.3`). The server catalog moved
+  `catalogVersion` `f41a48ed…` → `7f405e24…`: the default view went 93 → 94 and `?view=client`
+  105 → 106 with exactly one added row, `gpt-6.1-terra` (GPT-6.1 Terra) — 1,050,000 context,
+  text + image, efforts `low`/`medium`/`high`/`xhigh`/`max`, Pro tier, `$1/$5` up to a 272K context
+  step and `$2/$7.5` beyond (cache read `$0.05`/`$0.1`, cache write `$1.25`/`$2.5`), allowance
+  Go `$6` / GOAT `$20` / Pro `$20`, ZDR covered, no deal, no peak schedule, no published output
+  limit. The models docs page and the pricing page both list it; the `1.88.0` artifact registry
+  does not name it yet — the audit reports `absent from CLI registry` as an `incomplete` error, and
+  the capability fields come from `?view=client` as usual. Snapshots: plans 93 → 94, efforts
+  66 → 67, image 72 → 73, vendored price rows 93 → 94; ZDR stays 18, output-limit rows stay 79,
+  deals stay 4, thinking stays 16.
+
   - `KNOWN_EFFORTS` — model → selectable reasoning-effort levels. Authoritative source is the live
     `?view=client` catalog's `reasoningEfforts` (since command-code@1.82.4 the CLI no longer keeps this map
     bundled — `getSupportedEfforts()` resolves it through the catalog, whose embedded bootstrap snapshot

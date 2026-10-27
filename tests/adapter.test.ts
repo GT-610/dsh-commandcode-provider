@@ -6133,6 +6133,10 @@ test('known efforts snapshot covers the models the catalog advertises', () => {
   // as its K3 predecessor, so it belongs here and not in the thinking set.
   assert.deepEqual(KNOWN_EFFORTS['moonshotai/Kimi-K3.1-Pro'], ['low', 'high', 'max'])
   assert.ok(!KNOWN_THINKING_MODELS.has('moonshotai/Kimi-K3.1-Pro'))
+  // 2026-10-27: GPT-6.1 Terra is catalog-only as well and serves the same
+  // five selectable levels as its `gpt-6.1-sol` predecessor.
+  assert.deepEqual(KNOWN_EFFORTS['gpt-6.1-terra'], ['low', 'medium', 'high', 'xhigh', 'max'])
+  assert.ok(!KNOWN_THINKING_MODELS.has('gpt-6.1-terra'))
 })
 
 test('known thinking snapshot covers reasoning models without effort levels', () => {
@@ -6275,6 +6279,9 @@ test('known image models snapshot has stable anchor entries', () => {
   // 2026-10-24: inputModalities ["text","image"] in the live catalog, and both
   // the pricing page and the models docs page label the row Vision.
   assert.ok(KNOWN_IMAGE_MODELS.has('moonshotai/Kimi-K3.1-Pro'))
+  // 2026-10-27: inputModalities ["text","image"] in the live catalog; the
+  // pricing page (`caps.vision: true`) and the models docs page agree.
+  assert.ok(KNOWN_IMAGE_MODELS.has('gpt-6.1-terra'))
 })
 
 test('known plan snapshot tiers models by the official plan pages', () => {
@@ -6382,6 +6389,10 @@ test('known plan snapshot tiers models by the official plan pages', () => {
   // embedded availability, so it appears on the go/goat/pro plan pages alike.
   assert.equal(KNOWN_PLANS['moonshotai/Kimi-K3.1-Pro'], 'go')
   assert.equal(planLabel('moonshotai/Kimi-K3.1-Pro'), 'Go')
+  // 2026-10-27: GPT-6.1 Terra is Pro-only — `minimumPlan: "individual-pro"` in
+  // the live catalog, go / go-v1 / goat false and Pro and above true.
+  assert.equal(KNOWN_PLANS['gpt-6.1-terra'], 'pro')
+  assert.equal(planLabel('gpt-6.1-terra'), 'Pro')
   // Labels match the official tier names.
   assert.equal(planLabel('MiniMaxAI/MiniMax-M3'), 'Go')
   assert.equal(planLabel('claude-sonnet-5'), 'Pro')
