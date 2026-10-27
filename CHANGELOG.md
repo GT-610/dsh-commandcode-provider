@@ -25,8 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **`loaded()` 只认联网来源。** `snapshot()` 灌入的磁盘行与刷新失败后的空目录都不再被当成选择器首屏：冷启动"先聊天再开选择器"不会画出无年龄校验的旧目录，刷新失败后也不会先闪一次空列表。（`src/gateway-facts.ts`）
 - **可见性监听按任意卸载顺序解绑。** `unsubscribe` 句柄从函数局部提升到模块层，启动循环的 surface 先卸载时不再泄漏 `visibilitychange` 监听。（`src/client/panel.ts`）
 - **账户卡片首屏接线补真实渲染测试。** 新增 `tests/accounts-card-render.test.ts`（`react-test-renderer`）：首屏必须调 `onRefreshAuto()`、刷新按钮必须调 `onRefresh()`；把组件改回旧接线时该用例失败。此前只有"两个入口存在"的断言，回退后测试仍全绿。
+- **非安全上下文（`http://` 局域网访问）下设置页不再整块空白（issue #102）。** 页面身份原来直接取 `crypto.randomUUID()`，而该 API 只在安全上下文存在：以 `http://<局域网 IP>:3080` 打开时它是 `undefined`，控制器又在 `AccountsCard` 的 `useState(createEnrollment)` 惰性初始化里构造，异常被设置页插槽的错误边界接住——左侧「Command Code」标签正常、右侧内容区空白且无任何提示。新增 `src/client/random-id.ts` 的 `randomId()`：`randomUUID` 可用时照旧，否则退回非安全上下文同样可用的 `crypto.getRandomValues`，按 RFC 4122 拼出同形 v4；`AccountEnrollmentController` 的默认 `newId` 改用它。页面身份只是宿主把开通过程绑到单个浏览器页面的分组键，不参与鉴权，因此不要求 HTTPS。（`src/client/random-id.ts`、`src/client/enrollment.ts`）
 
   用例：`tests/adapter.test.ts` 新增「凭据解析与图片读取并行」「目录已在内存时不再等一次联网刷新」「超时定级复用已序列化的正文」「同一份工具 schema 只归一化一次」「用量卡片与选择器共享同一份账户事实」「凭据缺失时预算门不抢跑」「双超限一次报数」；`tests/gateway-facts.test.ts` 新增 4 条 `loaded()` 来源判据；`tests/panel.test.ts` 与 `tests/usage-client.test.ts` 新增自动/显式刷新、可见性与任意卸载顺序解绑用例；`tests/accounts-card-render.test.ts` 新增 2 条真实渲染接线用例。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1125／1125** 通过；`npm run build` 重建 `lib/`。未在真实宿主中人工验证。
+
+  issue #102 的用例：`tests/random-id.test.ts` 3 条——`randomId()` 的 v4 形态与互不相同、去掉 `crypto.randomUUID` 后仍产出同形 v4、以及非安全上下文下构造 `AccountEnrollmentController` 并把页面身份带给宿主；把默认 `newId` 改回 `() => crypto.randomUUID()` 时第三条失败（变异对照）。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1129／1129** 通过；`npm run build` 重建 `lib/`（`lib/client.js` 含 `randomId`，`lib/index.js` 与 `lib/index.d.ts` 字节不变）。未在真实 NAS／局域网环境人工验证。
 
 ## [0.15.4] - 2026-10-24
 
