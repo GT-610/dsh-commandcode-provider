@@ -29,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   用例：`tests/adapter.test.ts` 新增「凭据解析与图片读取并行」「目录已在内存时不再等一次联网刷新」「超时定级复用已序列化的正文」「同一份工具 schema 只归一化一次」「用量卡片与选择器共享同一份账户事实」「凭据缺失时预算门不抢跑」「双超限一次报数」；`tests/gateway-facts.test.ts` 新增 4 条 `loaded()` 来源判据；`tests/panel.test.ts` 与 `tests/usage-client.test.ts` 新增自动/显式刷新、可见性与任意卸载顺序解绑用例；`tests/accounts-card-render.test.ts` 新增 2 条真实渲染接线用例。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1125／1125** 通过；`npm run build` 重建 `lib/`。未在真实宿主中人工验证。
 
-  issue #102 的用例：`tests/random-id.test.ts` 3 条——`randomId()` 的 v4 形态与互不相同、去掉 `crypto.randomUUID` 后仍产出同形 v4、以及非安全上下文下构造 `AccountEnrollmentController` 并把页面身份带给宿主；把默认 `newId` 改回 `() => crypto.randomUUID()` 时第三条失败（变异对照）。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1129／1129** 通过；`npm run build` 重建 `lib/`（`lib/client.js` 含 `randomId`，`lib/index.js` 与 `lib/index.d.ts` 字节不变）。未在真实 NAS／局域网环境人工验证。
+  issue #102 的用例：`tests/random-id.test.ts` 3 条——安全上下文走平台 `randomUUID`（哨兵值分辨分支，不走自行拼装）、非安全上下文退回 `getRandomValues` 时 100 个身份互不相同且为 v4、非安全上下文下构造 `AccountEnrollmentController` 并把页面身份带给宿主。三处定向变异各命中一条：关闭快速路径只失败第一条，把版本位置 0 只失败后两条，把默认 `newId` 改回 `() => crypto.randomUUID()` 只失败第三条。**验证边界**：`npm run typecheck` 退出码 0；`npm ci` 干净安装后 `npm test` **1129／1129** 通过；`npm run build` 重建 `lib/`（`lib/client.js` 含 `randomId`，`lib/index.js` 与 `lib/index.d.ts` 字节不变）。未在真实 NAS／局域网环境人工验证。
 
 ## [0.15.4] - 2026-10-24
 
