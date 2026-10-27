@@ -79,6 +79,11 @@ src/enrollment-wire.ts Shared strict enrollment Remotes and page watch stream;
                       also owns the `EnrollmentMessageKey` vocabulary the states
                       carry (semantic keys, localized by the settings page).
 src/client/enrollment.ts Page-owned enrollment controller and stream lifetime.
+src/client/random-id.ts  Page identity for the settings page: `crypto.randomUUID`
+                      when the context is secure, otherwise an RFC 4122 v4 over
+                      `crypto.getRandomValues` (issue #102 — `http://` LAN
+                      access has no `randomUUID`, and the controller is built
+                      during React render).
 src/commands.ts       The /commandcode usage dashboard command.
 src/command-locales.ts  zh/en copy for the /commandcode command (Host-side
                       plain constants, no ctx.locale).
@@ -223,6 +228,10 @@ tests/volatile-config.test.ts the volatile helpers: `.volatile()` marking,
 tests/card.test.ts    Models-page provider-card tests (posture logic, key
                       write path, login affordance parity).
 tests/snapshot-store.test.ts  Snapshot-store notification and disposal tests.
+tests/random-id.test.ts  Page identity for the settings page (issue #102): v4
+                      shape, the `getRandomValues` fallback when
+                      `crypto.randomUUID` is absent (non-secure context), and
+                      constructing the enrollment controller there.
 tests/update.test.ts  update-hint tests (semver compare, payload parse,
                       throttle cache, failure semantics).
 tests/usage-wire.test.ts usage-Remote schema + descriptor tests.
