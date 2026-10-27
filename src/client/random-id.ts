@@ -5,8 +5,10 @@
  * 在非安全上下文同样可用，因此只在 `randomUUID` 不可用时按 RFC 4122 自行拼一个 v4。
  */
 export function randomId(): string {
+  // `crypto` 本身在所有浏览器里都存在（`getRandomValues` 不受安全上下文限制），
+  // 只有 `randomUUID` 会缺席；因此不为对象本身设兜底，避免留下永不可达的分支。
   const source = globalThis.crypto
-  if (typeof source?.randomUUID === 'function') return source.randomUUID()
+  if (typeof source.randomUUID === 'function') return source.randomUUID()
   const bytes = source.getRandomValues(new Uint8Array(16))
   // 版本位固定 4（v4 UUID），变体位固定 `10`，与 `randomUUID` 的输出同形。
   bytes[6] = (bytes[6]! & 0x0f) | 0x40

@@ -41,7 +41,7 @@ export class AccountEnrollmentController {
   private watch: RemoteStreamHandle<boolean, never> | undefined
   private ready: Promise<void> | undefined
   private openedPage = false
-  constructor(private readonly remote: () => EnrollmentRemote, private readonly changed: () => void, private readonly pollMs = 750, private readonly newId: () => string = randomId, private readonly openPage = openLoginPage) { this.pageId = newId() }
+  constructor(private readonly remote: () => EnrollmentRemote, private readonly changed: () => void, private readonly pollMs = 750, private readonly newId = randomId, private readonly openPage = openLoginPage) { this.pageId = newId() }
   /** 支持 React 开发模式的挂载检查；每次挂载仍重新读取宿主事实。 */
   activate(): void { if (this.disposed) this.pageId = this.newId(); this.disposed = false; void this.refresh() }
   reset(): void { if (!this.id) this.store.set({ ...this.store.getSnapshot(), active: undefined, error: undefined }) }
