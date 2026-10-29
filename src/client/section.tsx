@@ -565,7 +565,9 @@ function UsageWindow({
         <span className="cc-usageWindowValue">{cap > 0 ? `${formatMoney(used)} / ${formatMoney(cap)}` : formatMoney(used)}</span>
       </div>
       <div className="cc-usageBar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(ratio * 100)}>
-        <div className={exceeded ? 'cc-usageBarFill cc-usageBarFillWarn' : 'cc-usageBarFill'} style={{ transform: `scaleX(${ratio})` }} />
+        {/* Full width, shifted left by the unused share: a transform animates
+            without layout and keeps the fill's rounded ends. */}
+        <div className={exceeded ? 'cc-usageBarFill cc-usageBarFillWarn' : 'cc-usageBarFill'} style={{ transform: `translateX(${(ratio - 1) * 100}%)` }} />
       </div>
       {reset !== '' ? <p className="cc-usageWindowReset">{t('usageReset')} {reset}</p> : null}
     </div>
@@ -934,21 +936,6 @@ function VisibleModelsRow({ t, state, disabled, onSelect, onClear }: {
 }
 
 /**
- * One top-level group of the page (决策记录第十章第4条). All five groups share
- * this one shape so they cannot drift apart: the heading is an `h3` wrapping a
- * single full-width button — chevron first, then the title and the summary
- * badges — and a group action such as Refresh sits OUTSIDE that button, so
- * using it never folds the group. Which groups are open is page state (see
- * ./group-fold.ts), passed in here.
- *
- * The body stays mounted and is collapsed with a grid-rows animation (0fr +
- * `visibility:hidden` once the motion finishes) rather than unrendered:
- * `aria-controls` then always points at a real element, and the save bar's
- * locate action can focus an invalid field right after opening its group.
- * Folding is presentation only — staged drafts, validation and the save
- * path are untouched (第六章第1、2条).
- */
-/**
  * The glanceable header strip: account health, monthly remainder, service
  * status, model scope. Every string reuses one the groups already compute
  * (group summaries, balance labels, the service badge), so the strip adds no
@@ -1023,6 +1010,21 @@ function StatusStrip({ t, state, usage, snapshot, probe }: {
   )
 }
 
+/**
+ * One top-level group of the page (决策记录第十章第4条). All five groups share
+ * this one shape so they cannot drift apart: the heading is an `h3` wrapping a
+ * single full-width button — chevron first, then the title and the summary
+ * badges — and a group action such as Refresh sits OUTSIDE that button, so
+ * using it never folds the group. Which groups are open is page state (see
+ * ./group-fold.ts), passed in here.
+ *
+ * The body stays mounted and is hidden with the `hidden` attribute rather than
+ * unrendered: `aria-controls` then always points at a real element, and the
+ * save bar's locate action can focus an invalid field right after opening its
+ * group. Folding is presentation only and instant toggling is deliberate (it
+ * happens too often to be worth a wait); staged drafts, validation and the
+ * save path are untouched (第六章第1、2条).
+ */
 function FoldableGroup({ id, title, expanded, onToggle, badges, action, children }: {
   /** Stable group id; it derives the title and body element ids. */
   id: FoldGroup
@@ -1049,7 +1051,7 @@ function FoldableGroup({ id, title, expanded, onToggle, badges, action, children
         </h3>
         {action}
       </div>
-      <div id={bodyId} className={expanded ? 'cc-groupBody' : 'cc-groupBody cc-groupBodyClosed'}>
+      <div id={bodyId} className="cc-groupBody" hidden={!expanded}>
         <div className="cc-rows">{children}</div>
       </div>
     </section>
@@ -1695,7 +1697,7 @@ function MiniMeter({ label, limit }: { label: string; limit: NonNullable<Command
     <span className="cc-miniMeter" title={limit.cap > 0 ? `${formatMoney(limit.used)} / ${formatMoney(limit.cap)}` : undefined}>
       <span className="cc-miniMeterLabel">{label}</span>
       <span className="cc-miniMeterTrack" aria-hidden="true">
-        <span className={limit.exceeded ? 'cc-miniMeterFill cc-usageBarFillWarn' : 'cc-miniMeterFill'} style={{ transform: `scaleX(${ratio})` }} />
+        <span className={limit.exceeded ? 'cc-miniMeterFill cc-usageBarFillWarn' : 'cc-miniMeterFill'} style={{ transform: `translateX(${(ratio - 1) * 100}%)` }} />
       </span>
       <span className="cc-miniMeterValue">{percent}</span>
     </span>

@@ -326,3 +326,47 @@ test('the sidebar action row is still forced into a column', () => {
     assert.equal(matches(ASK_DIALOG_ROW, rule.selector), false, rule.selector)
   }
 })
+
+// Settings-page motion and hover policy (2026-10-29)
+
+const PAGE_RULES = parseRules(PAGE_CSS)
+const HOVER_MEDIA = '@media (hover:hover) and (pointer:fine)'
+const REDUCED_MEDIA = '@media (prefers-reduced-motion:reduce)'
+
+test('PAGE_CSS: every :hover rule sits in the fine-pointer hover block, so a tap leaves no stuck hover colour', () => {
+  const offenders = PAGE_RULES.filter((rule) => rule.selector.includes(':hover') && rule.media !== HOVER_MEDIA)
+    // A cursor change cannot stick on touch, so it may stay outside the block.
+    .filter((rule) => rule.body.trim() !== 'cursor:pointer')
+    .map((rule) => rule.selector)
+  assert.deepEqual(offenders, [])
+})
+
+test('PAGE_CSS: press feedback stays outside the hover block and every scale is undone under reduced motion', () => {
+  const pressed = PAGE_RULES.filter((rule) => rule.selector.includes(':active') && /transform:scale\(/.test(rule.body))
+  assert.ok(pressed.length >= 4, 'buttons, segments, icon and reset buttons each scale on press')
+  for (const rule of pressed) assert.equal(rule.media, null, rule.selector)
+  const undone = PAGE_RULES.filter((rule) => rule.media === REDUCED_MEDIA && /transform:none/.test(rule.body))
+    .flatMap((rule) => rule.selector.split(',').map((selector) => selector.trim()))
+  for (const selector of pressed.flatMap((rule) => rule.selector.split(',').map((part) => part.trim()))) {
+    assert.ok(undone.includes(selector), `${selector} still scales under prefers-reduced-motion`)
+  }
+})
+
+test('PAGE_CSS: transitions name their properties and never animate layout', () => {
+  const offenders = PAGE_RULES.flatMap((rule) =>
+    [...rule.body.matchAll(/transition:([^;]+)/g)].flatMap((m) =>
+      (m[1] ?? '').split(',').map((part) => part.trim().split(/\s+/)[0] ?? '')
+        .filter((prop) => /^(?:all|width|height|padding|margin|top|left|right|bottom)$/.test(prop))
+        .map((prop) => `${rule.selector} → ${prop}`),
+    ),
+  )
+  assert.deepEqual(offenders, [])
+})
+
+test('PAGE_CSS: an invalid field keeps its error border under the pointer', () => {
+  const block = PAGE_RULES.filter((rule) => rule.media === HOVER_MEDIA).map((rule) => rule.selector)
+  const plain = block.findIndex((selector) => selector.includes('.cc-fieldInput:hover:not(:disabled)'))
+  const invalid = block.findIndex((selector) => selector.includes('.cc-fieldInputInvalid:hover:not(:disabled)'))
+  assert.ok(plain >= 0 && invalid > plain, 'the invalid hover border must follow the plain one at equal specificity')
+  assert.ok(block[invalid]!.includes('.cc-unitBoxInvalid:hover'))
+})
