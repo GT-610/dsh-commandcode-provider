@@ -565,7 +565,7 @@ function UsageWindow({
         <span className="cc-usageWindowValue">{cap > 0 ? `${formatMoney(used)} / ${formatMoney(cap)}` : formatMoney(used)}</span>
       </div>
       <div className="cc-usageBar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(ratio * 100)}>
-        <div className={exceeded ? 'cc-usageBarFill cc-usageBarFillWarn' : 'cc-usageBarFill'} style={{ width: `${ratio * 100}%` }} />
+        <div className={exceeded ? 'cc-usageBarFill cc-usageBarFillWarn' : 'cc-usageBarFill'} style={{ transform: `scaleX(${ratio})` }} />
       </div>
       {reset !== '' ? <p className="cc-usageWindowReset">{t('usageReset')} {reset}</p> : null}
     </div>
@@ -941,18 +941,92 @@ function VisibleModelsRow({ t, state, disabled, onSelect, onClear }: {
  * using it never folds the group. Which groups are open is page state (see
  * ./group-fold.ts), passed in here.
  *
- * The body stays mounted and is hidden with the `hidden` attribute rather than
- * unrendered: `aria-controls` then always points at a real element, and the
- * save bar's locate action can focus an invalid field right after opening its
- * group. Folding is presentation only — staged drafts, validation and the save
+ * The body stays mounted and is collapsed with a grid-rows animation (0fr +
+ * `visibility:hidden` once the motion finishes) rather than unrendered:
+ * `aria-controls` then always points at a real element, and the save bar's
+ * locate action can focus an invalid field right after opening its group.
+ * Folding is presentation only — staged drafts, validation and the save
  * path are untouched (第六章第1、2条).
  */
-function FoldableGroup({ id, title, divided = true, expanded, onToggle, badges, action, children }: {
+/**
+ * The glanceable header strip: account health, monthly remainder, service
+ * status, model scope. Every string reuses one the groups already compute
+ * (group summaries, balance labels, the service badge), so the strip adds no
+ * locale keys and cannot disagree with the card below it. Cells are plain
+ * text, not links — the groups beneath are the place to act.
+ */
+function StatusStrip({ t, state, usage, snapshot, probe }: {
+  t: Translate<SettingsCommandCodeKey>
+  state: SettingsPageState
+  usage: UsagePageState
+  snapshot: ServiceStatusSnapshot | undefined
+  probe: ServiceProbe
+}) {
+  const rows = accountRows(state, usage, t)
+  const issues = accountIssues(rows.map((row) => row.usage))
+  const defaultRow = rows.find((row) => row.id === 'default')
+  const credits = defaultRow?.usage?.report?.credits
+  const monthly = credits !== undefined && credits.monthlyReported !== false ? credits : undefined
+  const depleted = monthly !== undefined && monthly.monthlyCredits <= 0
+  const planName = defaultRow?.usage?.report?.plan?.name ?? ''
+  const overridden = modelsOverriddenCount(state)
+  const view = serviceStatusView(snapshot, probe, t, Date.now())
+  const serviceDot = view.badge.tone === 'ok' ? 'cc-tabDot cc-tabDotOk'
+    : view.badge.tone === 'warn' ? 'cc-tabDot cc-tabDotWarn'
+      : view.badge.tone === 'error' ? 'cc-tabDot cc-tabDotError'
+        : 'cc-tabDot cc-tabDotBlank'
+  return (
+    <div className="cc-statusStrip">
+      <div className="cc-statusCell">
+        <span className="cc-statusHead">
+          <span className={issues.severe ? 'cc-tabDot cc-tabDotError' : issues.count > 0 ? 'cc-tabDot cc-tabDotWarn' : 'cc-tabDot cc-tabDotOk'} aria-hidden="true" />
+          <span className="cc-statusLabel">{t('accountsTitle')}</span>
+        </span>
+        <span className="cc-statusStripValue">{rows.length === 1 ? t('accountsSummaryOne') : t('accountsSummaryMany', { count: rows.length })}</span>
+        {issues.count > 0 ? (
+          <span className="cc-statusSub">{t('accountsSummaryIssues', { count: issues.count })}</span>
+        ) : planName !== '' ? (
+          <span className="cc-statusSub">{planName}</span>
+        ) : null}
+      </div>
+      <div className="cc-statusCell">
+        <span className="cc-statusHead">
+          <span className={depleted ? 'cc-tabDot cc-tabDotError' : monthly !== undefined ? 'cc-tabDot cc-tabDotOk' : 'cc-tabDot cc-tabDotBlank'} aria-hidden="true" />
+          <span className="cc-statusLabel">{t('usageMonthlyLeft')}</span>
+        </span>
+        <span className="cc-statusStripValue">{monthly !== undefined ? formatMoney(Math.max(0, monthly.monthlyCredits)) : '—'}</span>
+        {credits !== undefined ? (
+          <span className="cc-statusSub">{`${t('usagePurchased')} ${credits.purchasedReported === false ? '—' : formatMoney(credits.purchasedCredits)} · ${t('usageFree')} ${credits.freeReported === false ? '—' : formatMoney(credits.freeCredits)}`}</span>
+        ) : null}
+      </div>
+      <div className="cc-statusCell">
+        <span className="cc-statusHead">
+          <span className={serviceDot} aria-hidden="true" />
+          <span className="cc-statusLabel">{t('serviceStatusTitle')}</span>
+        </span>
+        <span className="cc-statusStripValue">{view.badge.label}</span>
+        {view.updated !== undefined ? (
+          <span className="cc-statusSub">{view.updated}</span>
+        ) : (
+          <span className="cc-statusSub">{view.local}</span>
+        )}
+      </div>
+      <div className="cc-statusCell">
+        <span className="cc-statusHead">
+          <span className="cc-tabDot" aria-hidden="true" />
+          <span className="cc-statusLabel">{t('modelsTitle')}</span>
+        </span>
+        <span className="cc-statusStripValue">{state.visibleModelsAll ? t('visibleModelsSummaryAll') : t('visibleModelsSummary', { count: state.visibleModels.length })}</span>
+        {overridden > 0 ? <span className="cc-statusSub">{overriddenText(overridden, t)}</span> : null}
+      </div>
+    </div>
+  )
+}
+
+function FoldableGroup({ id, title, expanded, onToggle, badges, action, children }: {
   /** Stable group id; it derives the title and body element ids. */
   id: FoldGroup
   title: string
-  /** The hairline above the group; only the first group on the page omits it. */
-  divided?: boolean
   expanded: boolean
   onToggle(): void
   /** Summary badges beside the title, shown folded or not. */
@@ -964,7 +1038,7 @@ function FoldableGroup({ id, title, divided = true, expanded, onToggle, badges, 
   const titleId = `cc-group-${id}-title`
   const bodyId = `cc-group-${id}-body`
   return (
-    <section className={divided ? 'cc-group cc-groupDivided' : 'cc-group'} aria-labelledby={titleId}>
+    <section className="cc-group" aria-labelledby={titleId}>
       <div className="cc-groupHead">
         <h3 className="cc-groupHeading">
           <button type="button" className="cc-disclosure" aria-expanded={expanded} aria-controls={bodyId} onClick={onToggle}>
@@ -975,7 +1049,7 @@ function FoldableGroup({ id, title, divided = true, expanded, onToggle, badges, 
         </h3>
         {action}
       </div>
-      <div id={bodyId} className="cc-groupBody" hidden={!expanded}>
+      <div id={bodyId} className={expanded ? 'cc-groupBody' : 'cc-groupBody cc-groupBodyClosed'}>
         <div className="cc-rows">{children}</div>
       </div>
     </section>
@@ -1621,7 +1695,7 @@ function MiniMeter({ label, limit }: { label: string; limit: NonNullable<Command
     <span className="cc-miniMeter" title={limit.cap > 0 ? `${formatMoney(limit.used)} / ${formatMoney(limit.cap)}` : undefined}>
       <span className="cc-miniMeterLabel">{label}</span>
       <span className="cc-miniMeterTrack" aria-hidden="true">
-        <span className={limit.exceeded ? 'cc-miniMeterFill cc-usageBarFillWarn' : 'cc-miniMeterFill'} style={{ width: `${ratio * 100}%` }} />
+        <span className={limit.exceeded ? 'cc-miniMeterFill cc-usageBarFillWarn' : 'cc-miniMeterFill'} style={{ transform: `scaleX(${ratio})` }} />
       </span>
       <span className="cc-miniMeterValue">{percent}</span>
     </span>
@@ -2209,7 +2283,6 @@ export function AccountsCard({ t, state, usage, login, disabled, actions, onRefr
     <FoldableGroup
       id="accounts"
       title={t('accountsTitle')}
-      divided={false}
       expanded={expanded}
       onToggle={onToggle}
       badges={
@@ -2618,6 +2691,7 @@ export function CommandCodeSettingsPage(props: CommandCodeSettingsProps) {
     <section ref={sectionRef} className={bar.visible ? 'cc-section cc-sectionWithBar' : 'cc-section'} aria-label={t('title')}>
       <h2 className="cc-title">{t('title')}</h2>
       <p className="cc-intro">{t('intro')}</p>
+      <StatusStrip t={t} state={state} usage={usage} snapshot={status.snapshot} probe={status.probe} />
       {!state.writable ? <Notice icon="lock"><p>{t('readOnly')}</p></Notice> : null}
       <AccountsCard
         t={t}

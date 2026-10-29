@@ -28,13 +28,15 @@ export const PAGE_CSS_ID = '@mars-sea/dsh-commandcode-provider/CommandCodeSettin
  * The settings-page stylesheet.
  *
  * Every size is the design canvas's (the cc-kit.css of the "CommandCode 设置页
- * 重设计" artboards, 2026-10-21), with its colour tokens mapped onto the
- * harness theme aliases so dark mode keeps working: a row is 12px of vertical
- * padding with no line between rows, title 14/22, description 12/18, a 24px
- * gap to the control; a group is 16px of padding under a 1px border-l2 rule,
- * its heading 36px high; the page title is 18/26 and group titles 14/22, both
- * 600. The page renders with grayscale antialiasing and descriptive text in
- * label-secondary.
+ * 重设计" artboards, 2026-10-21, as revised by the 2026-10-29 card redesign):
+ * a row is 14px of vertical padding with a .5px hairline between rows, title
+ * 14/22, description 12/18, a 24px gap to the control; a group is a 16px-radius
+ * card on the raised surface with a 1px border-l2 stroke, its heading 52px
+ * high; the page title is 22/28 and group titles 15/22, both 600. The page
+ * renders with grayscale antialiasing and descriptive text in label-secondary.
+ * A status strip under the header (account health, monthly remainder, service
+ * status, model scope) reuses the groups' own summary strings, so it adds no
+ * locale keys and cannot disagree with the card below it.
  *
  * Shapes follow one rule — clickable things are pills, fillable things are
  * 8px. Buttons are drawn here (PageButton → cc-btn: md 32px, sm 28px, lg 36px
@@ -48,27 +50,58 @@ export const PAGE_CSS_ID = '@mars-sea/dsh-commandcode-provider/CommandCodeSettin
  * shares cc-hint / cc-badgeMuted / cc-input and keeps their colours.
  */
 export const PAGE_CSS = `
-.cc-section{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;display:flex;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
-.cc-title{margin:0;color:var(--dsw-alias-label-primary);font-size:18px;font-weight:600;line-height:26px}
+.cc-section{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;display:flex;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;--cc-ease-out:cubic-bezier(.22,1,.36,1)}
+.cc-title{margin:0;color:var(--dsw-alias-label-primary);font-size:22px;font-weight:700;line-height:28px}
 .cc-intro{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:22px}
+/* The glanceable header strip: four cells (account health, monthly remainder,
+ * service status, model scope) on one card. Labels reuse cc-statusLabel and
+ * dots reuse cc-tabDot, so no new colour language is introduced; the strip
+ * folds to 2 × 2 in a narrow panel. */
+.cc-statusStrip{grid-template-columns:repeat(4,minmax(0,1fr));gap:0;display:grid;margin-top:16px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.cc-statusCell{flex-direction:column;gap:2px;min-width:0;display:flex;padding:14px 16px}
+.cc-statusCell+.cc-statusCell{border-left:1px solid var(--dsw-alias-border-l2)}
+.cc-statusHead{align-items:center;gap:6px;display:flex}
+.cc-statusStripValue{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:22px}
+.cc-statusSub{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+@media (max-width:560px){.cc-statusStrip{grid-template-columns:repeat(2,minmax(0,1fr))}.cc-statusCell:nth-child(3){border-left:0}.cc-statusCell:nth-child(n+3){border-top:1px solid var(--dsw-alias-border-l2)}}
 .cc-spacer{flex:1}
-.cc-group{flex-direction:column;display:flex;padding:16px 0}
-.cc-group:not(.cc-groupDivided){padding-top:24px}
-.cc-groupDivided{border-top:1px solid var(--dsw-alias-border-l2)}
-.cc-groupHead{align-items:center;gap:8px;display:flex;min-height:36px}
-.cc-groupTitle{margin:0;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600;line-height:22px}
+/* Groups are cards now (2026-10-29 redesign): a 16px-radius raised surface
+ * with a border-l2 stroke, 16px between cards, no divider rules. The entrance
+ * is a @starting-style rise with a 40ms stagger per card — transitions, not
+ * keyframes, so a re-render never replays it. */
+.cc-group{flex-direction:column;display:flex;margin-top:16px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(0,0,0,.04);transition:opacity 320ms var(--cc-ease-out),transform 320ms var(--cc-ease-out)}
+@starting-style{.cc-group{opacity:0;transform:translateY(8px)}}
+.cc-section>section:nth-of-type(1){transition-delay:0ms}
+.cc-section>section:nth-of-type(2){transition-delay:40ms}
+.cc-section>section:nth-of-type(3){transition-delay:80ms}
+.cc-section>section:nth-of-type(4){transition-delay:120ms}
+.cc-section>section:nth-of-type(5){transition-delay:160ms}
+.cc-groupHead{align-items:center;gap:8px;display:flex;min-height:52px;padding:0 16px}
+.cc-groupTitle{margin:0;color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:22px}
 .cc-groupDesc{margin:2px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-.cc-rows>.cc-groupDesc{margin:0}
+.cc-rows>.cc-groupDesc{margin:0 16px}
 .cc-groupHeading{flex:1;min-width:0;margin:0;font:inherit;display:flex}
 /* The whole heading row is the fold toggle: chevron, title, summary badges. */
-.cc-disclosure{box-sizing:border-box;flex-wrap:wrap;flex:1;align-items:center;gap:6px 8px;min-width:0;min-height:36px;padding:0;border:0;background:0 0;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:8px;display:flex}
-.cc-foldChevron{color:var(--dsw-alias-label-tertiary);transition:transform .15s ease}
+.cc-disclosure{box-sizing:border-box;flex-wrap:wrap;flex:1;align-items:center;gap:6px 8px;min-width:0;min-height:52px;padding:0;border:0;background:0 0;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:8px;display:flex;transition:background 160ms var(--cc-ease-out)}
+.cc-disclosure:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.cc-foldChevron{color:var(--dsw-alias-label-tertiary);transition:transform 200ms var(--cc-ease-out)}
 .cc-foldChevronClosed{transform:rotate(-90deg)}
-.cc-groupBody{flex-direction:column;display:flex;padding-top:4px}
-.cc-groupBody[hidden]{display:none}
+/* The fold animates instead of snapping: the body is a 1fr grid track whose
+ * child (cc-rows) clips, so collapsing to 0fr interpolates. visibility rides
+ * a delayed switch so a closed body leaves the tab order and the
+ * accessibility tree only after the motion finishes. */
+.cc-groupBody{display:grid;grid-template-rows:1fr;transition:grid-template-rows 240ms var(--cc-ease-out),opacity 200ms var(--cc-ease-out),visibility 0s}
+.cc-groupBodyClosed{grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows 240ms var(--cc-ease-out),opacity 200ms var(--cc-ease-out),visibility 0s linear 240ms}
+.cc-groupBody>div{overflow:hidden;min-height:0}
 .cc-disclosure:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
-.cc-rows{flex-direction:column;display:flex}
-.cc-row{flex-wrap:wrap;align-items:center;gap:8px 24px;display:flex;padding:12px 0}
+.cc-rows{flex-direction:column;display:flex;padding-top:4px}
+/* Card inset by default: every direct body child sits 16px off the card edge,
+ * and only rows opt out — they carry their own 16px side padding so their
+ * hairlines run the card's full width. */
+.cc-rows>*{margin-left:16px;margin-right:16px}
+.cc-rows>.cc-row{margin-left:0;margin-right:0}
+.cc-row{flex-wrap:wrap;align-items:center;gap:8px 24px;display:flex;padding:14px 16px}
+.cc-rows>.cc-row+.cc-row{border-top:.5px solid var(--dsw-alias-border-l2)}
 .cc-rowFlush{padding:0}
 /* The text column starts at 200px (not 300px) so the widest controls — the
  * 280px API base input, the allowlist's button + 200px selector — still sit
@@ -104,8 +137,9 @@ export const PAGE_CSS = `
  * round reset button. Reset lives here rather than after the control, so no
  * row reserves a reset column and the page keeps one right edge. */
 .cc-overrideTag{align-items:center;gap:4px;display:inline-flex}
-.cc-resetInline{flex:none;align-items:center;justify-content:center;display:inline-flex;width:20px;height:20px;padding:0;border:0;border-radius:999px;corner-shape:round;background:0 0;color:var(--dsw-alias-label-tertiary);cursor:pointer}
+.cc-resetInline{flex:none;align-items:center;justify-content:center;display:inline-flex;width:20px;height:20px;padding:0;border:0;border-radius:999px;corner-shape:round;background:0 0;color:var(--dsw-alias-label-tertiary);cursor:pointer;transition:transform 160ms var(--cc-ease-out),background 160ms var(--cc-ease-out),color 160ms var(--cc-ease-out)}
 .cc-resetInline:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.cc-resetInline:active:not(:disabled){transform:scale(.97)}
 .cc-resetInline:disabled{cursor:default;opacity:.4}
 .cc-resetInline:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .cc-icon{flex:none;width:16px;height:16px}
@@ -113,7 +147,8 @@ export const PAGE_CSS = `
  * shape, md 32px / 14px text / 14px icon, sm 28px / 12px text, lg 36px for
  * the save bar; primary is the brand fill, secondary the quiet grey fill,
  * ghost label-secondary text, danger the error fill. */
-.cc-btn{box-sizing:border-box;flex:none;align-items:center;justify-content:center;gap:6px;display:inline-flex;height:32px;padding:0 14px;border:0;border-radius:999px;corner-shape:round;font:inherit;font-size:14px;line-height:22px;white-space:nowrap;cursor:pointer;text-decoration:none}
+.cc-btn{box-sizing:border-box;flex:none;align-items:center;justify-content:center;gap:6px;display:inline-flex;height:32px;padding:0 14px;border:0;border-radius:999px;corner-shape:round;font:inherit;font-size:14px;line-height:22px;white-space:nowrap;cursor:pointer;text-decoration:none;transition:transform 160ms var(--cc-ease-out),background 160ms var(--cc-ease-out)}
+.cc-btn:active:not(:disabled){transform:scale(.97)}
 .cc-btnSm{height:28px;padding:0 10px;gap:4px;font-size:12px;line-height:18px}
 .cc-btnLg{height:36px;padding:0 16px}
 .cc-btn .cc-btnIcon{width:14px;height:14px}
@@ -182,19 +217,20 @@ export const PAGE_CSS = `
  * hardcoded white thumb vanishes on the checked track in dark mode; the brand
  * foreground is what the platform paints on that fill. (3) border-l3 as the
  * off track — border-l2 leaves it indistinguishable from the page. */
-.cc-toggle{box-sizing:border-box;appearance:none;flex-shrink:0;width:36px;height:20px;margin:0;padding:2px;border:0;border-radius:10px;corner-shape:round;background:var(--dsw-alias-border-l3);cursor:pointer;position:relative}
+.cc-toggle{box-sizing:border-box;appearance:none;flex-shrink:0;width:40px;height:24px;margin:0;padding:2px;border:0;border-radius:12px;corner-shape:round;background:var(--dsw-alias-border-l3);cursor:pointer;position:relative;transition:transform 160ms var(--cc-ease-out),background 160ms var(--cc-ease-out)}
 .cc-toggle:checked{background:var(--dsw-alias-brand-primary)}
-.cc-toggle::after{content:'';display:block;width:16px;height:16px;border-radius:50%;corner-shape:round;background:var(--dsw-alias-label-primary-foreground);transition:transform .12s ease}
+.cc-toggle::after{content:'';display:block;width:20px;height:20px;border-radius:50%;corner-shape:round;background:var(--dsw-alias-label-primary-foreground);transition:transform 160ms var(--cc-ease-out)}
 .cc-toggle:checked::after{transform:translateX(16px)}
+.cc-toggle:active:not(:disabled){transform:scale(.97)}
 .cc-toggle:not(:checked)::after{background:var(--dsw-alias-switch-thumb,var(--dsw-alias-label-primary-foreground))}
 .cc-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .cc-toggle:disabled{cursor:default;opacity:.5}
-.cc-accountMode{align-items:center;gap:8px;display:flex;margin:12px 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.cc-accountMode{align-items:center;gap:8px;display:flex;margin:12px 16px 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
 .cc-accountList{flex-direction:column;gap:8px;display:flex}
-.cc-accountList+.cc-panel{margin-top:8px}
+.cc-accountList+.cc-panel{margin:8px 16px 16px}
 /* One row under the list: Add account (outline) leads, the analytics exit
  * (ghost) trails; the exit's long label clamps instead of wrapping the row. */
-.cc-accountActions{flex-wrap:wrap;align-items:center;gap:8px;display:flex;margin-top:12px}
+.cc-accountActions{flex-wrap:wrap;align-items:center;gap:8px;display:flex;margin:12px 16px 16px}
 .cc-analyticsEntry{max-width:100%;min-width:0}
 .cc-analyticsEntryText{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cc-chevronOpen{transform:rotate(180deg)}
@@ -205,14 +241,15 @@ export const PAGE_CSS = `
 .cc-accountToggle{flex-wrap:wrap;align-items:center;gap:6px 8px;display:flex;flex:1;min-width:0;min-height:44px;padding:0 0 0 16px;background:0 0;border:0;border-radius:12px;color:inherit;cursor:pointer;font:inherit;text-align:left}
 .cc-accountToggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px;border-radius:4px}
 .cc-accountName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px}
-.cc-iconButton{flex-shrink:0;align-items:center;justify-content:center;display:inline-flex;width:28px;height:28px;padding:0;background:0 0;border:0;border-radius:8px;color:var(--dsw-alias-label-tertiary);cursor:pointer}
+.cc-iconButton{flex-shrink:0;align-items:center;justify-content:center;display:inline-flex;width:28px;height:28px;padding:0;background:0 0;border:0;border-radius:8px;color:var(--dsw-alias-label-tertiary);cursor:pointer;transition:transform 160ms var(--cc-ease-out),background 160ms var(--cc-ease-out),color 160ms var(--cc-ease-out)}
 .cc-iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.cc-iconButton:active:not(:disabled){transform:scale(.97)}
 .cc-iconButton:disabled{cursor:default;opacity:.4}
 .cc-iconButton:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}
 /* Per-model context-length overrides (issue #86) as the design's small table:
  * a card holding a head row over a model / value / remove grid, a line
  * between rows; a row's error wraps onto its own line across the grid. */
-.cc-contextTable{flex-direction:column;display:flex;margin:0 0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px}
+.cc-contextTable{flex-direction:column;display:flex;margin:0 16px 16px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px}
 .cc-contextItem{grid-template-columns:minmax(0,1fr) 144px 28px;align-items:center;gap:8px;display:grid;padding:8px 8px 8px 12px}
 .cc-contextItem+.cc-contextItem{border-top:1px solid var(--dsw-alias-border-l2)}
 .cc-contextHead{grid-template-columns:minmax(0,1fr) 144px 28px;align-items:center;gap:8px;display:grid;height:32px;padding:0 8px 0 12px;border-bottom:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
@@ -232,7 +269,7 @@ export const PAGE_CSS = `
 .cc-miniMeter{align-items:center;gap:8px;display:inline-flex;font-size:12px;line-height:18px}
 .cc-miniMeterLabel{color:var(--dsw-alias-label-secondary)}
 .cc-miniMeterTrack{overflow:hidden;background:var(--dsw-alias-bg-module-platform);border-radius:999px;width:64px;height:4px}
-.cc-miniMeterFill{display:block;background:var(--dsw-alias-brand-primary);border-radius:999px;height:100%}
+.cc-miniMeterFill{display:block;width:100%;background:var(--dsw-alias-brand-primary);border-radius:999px;height:100%;transform-origin:left;transition:transform .3s var(--cc-ease-out)}
 .cc-miniMeterValue{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .cc-accountDetails{container-type:inline-size;border-top:1px solid var(--dsw-alias-border-l2);flex-direction:column;gap:16px;display:flex;padding:16px}
 .cc-inlineForm{flex-direction:column;gap:8px;display:flex}
@@ -244,7 +281,8 @@ export const PAGE_CSS = `
 /* The add-account method switch, drawn as the design's segmented control: a
  * pill track on the raised surface, the chosen segment in the brand fill. */
 .cc-seg{align-self:flex-start;display:inline-flex;padding:2px;border-radius:999px;corner-shape:round;background:var(--dsw-alias-bg-layer-1);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l2)}
-.cc-segItem{height:28px;padding:0 12px;border:0;border-radius:999px;corner-shape:round;background:0 0;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:18px;cursor:pointer}
+.cc-segItem{height:28px;padding:0 12px;border:0;border-radius:999px;corner-shape:round;background:0 0;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:18px;cursor:pointer;transition:transform 160ms var(--cc-ease-out),background 160ms var(--cc-ease-out),color 160ms var(--cc-ease-out)}
+.cc-segItem:active:not(:disabled){transform:scale(.97)}
 .cc-segItem:hover:not(:disabled):not(.cc-segOn){color:var(--dsw-alias-label-primary)}
 .cc-segItem:disabled{cursor:default;opacity:.4}
 .cc-segItem:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
@@ -281,7 +319,7 @@ export const PAGE_CSS = `
 .cc-usageWindowValue{color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
 .cc-usageExceeded{color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
 .cc-usageBar{overflow:hidden;background:var(--dsw-alias-bg-module-platform);border-radius:999px;height:4px}
-.cc-usageBarFill{background:var(--dsw-alias-brand-primary);border-radius:999px;height:100%;transition:width .3s ease}
+.cc-usageBarFill{width:100%;background:var(--dsw-alias-brand-primary);border-radius:999px;height:100%;transform-origin:left;transition:transform .3s var(--cc-ease-out)}
 .cc-usageBarFillWarn{background:var(--dsw-alias-state-error-primary)}
 .cc-usageWindowReset{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:18px}
 .cc-usagePartial{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px;line-height:18px}
@@ -345,12 +383,12 @@ export const PAGE_CSS = `
  * the transition) takes its buttons out of the tab order. Its surface is an
  * elevated layer (bg-layer-1 over the settings panel's layer-2) with the
  * platform's prominent elevation and no stroke, and its corners are concentric
- * with the capsule buttons inside it (36px pills inset by 4px in a 44px pill)
+ * with the capsule buttons inside it (36px pills inset by 6px in a 48px pill)
  * so the gap around each button is even. */
 .cc-sectionWithBar{padding-bottom:80px}
 .cc-saveBarDock{position:sticky;bottom:0;z-index:2;height:0;pointer-events:none}
-.cc-saveBar{--cc-saveBar-tone:var(--dsw-alias-state-warn-primary,#d97706);position:absolute;left:50%;bottom:20px;box-sizing:border-box;width:max-content;max-width:calc(100% - 24px);align-items:center;gap:10px;display:flex;height:44px;padding:4px 4px 4px 16px;border:0;border-radius:22px;corner-shape:round;background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-elevation-prominent,0 12px 32px -8px rgba(0,0,0,.24),0 2px 8px rgba(0,0,0,.08));opacity:0;visibility:hidden;transform:translate(-50%,12px);transition:opacity .16s ease,transform .16s ease,visibility 0s linear .16s}
-.cc-saveBarShown{opacity:1;visibility:visible;transform:translate(-50%,0);pointer-events:auto;transition:opacity .2s ease,transform .24s cubic-bezier(.2,.9,.3,1.1),visibility 0s}
+.cc-saveBar{--cc-saveBar-tone:var(--dsw-alias-state-warn-primary,#d97706);position:absolute;left:50%;bottom:20px;box-sizing:border-box;width:max-content;max-width:calc(100% - 24px);align-items:center;gap:10px;display:flex;height:48px;padding:6px 6px 6px 16px;border:0;border-radius:24px;corner-shape:round;background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-elevation-prominent,0 12px 32px -8px rgba(0,0,0,.24),0 2px 8px rgba(0,0,0,.08));opacity:0;visibility:hidden;transform:translate(-50%,12px);transition:opacity 160ms var(--cc-ease-out),transform 160ms var(--cc-ease-out),visibility 0s linear 160ms}
+.cc-saveBarShown{opacity:1;visibility:visible;transform:translate(-50%,0);pointer-events:auto;transition:opacity 200ms var(--cc-ease-out),transform 240ms var(--cc-ease-out),visibility 0s}
 .cc-saveBar-error{--cc-saveBar-tone:var(--dsw-alias-state-error-primary)}
 .cc-saveBar-success{--cc-saveBar-tone:var(--dsw-alias-state-success-primary,#16a34a);padding-right:18px}
 .cc-saveBarIcon{flex-shrink:0;align-items:center;justify-content:center;display:inline-flex;width:16px;height:16px;color:var(--cc-saveBar-tone)}
@@ -358,5 +396,5 @@ export const PAGE_CSS = `
 .cc-saveBarText{min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px}
 .cc-saveBar-error .cc-saveBarText{color:var(--dsw-alias-state-error-primary)}
 .cc-saveBarActions{flex-shrink:0;align-items:center;gap:4px;display:flex;margin-left:8px}
-@media (prefers-reduced-motion:reduce){.cc-foldChevron,.cc-toggle::after,.cc-usageBarFill,.cc-saveBar,.cc-saveBarShown{transition:none}}
+@media (prefers-reduced-motion:reduce){.cc-section *{transition:none!important;animation:none!important}}
 `

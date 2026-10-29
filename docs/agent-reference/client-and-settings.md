@@ -288,12 +288,20 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   （`src/client/section.tsx`）——`h3` 包一个整行按钮，箭头在标题左侧，「刷新」这类分组动作放在按钮外。
   默认只展开「账户」（页头的「全部展开／全部收起」已按用户要求删除）；展开状态存在浏览器本地一个键
   `@mars-sea/dsh-commandcode-provider/settings-fold`（`src/client/group-fold.ts`，缺失、损坏或存储被禁用时回落
-  默认，不进配置文档、不随 profile 同步）。收起的正文用 `hidden` 保留挂载，`aria-controls` 始终有效。
+  默认，不进配置文档、不随 profile 同步）。收起的正文以 grid 0fr 动画收起、动效结束后再
+  `visibility:hidden` 保留挂载，`aria-controls` 始终有效。
   标题旁摘要徽标展开收起都显示（账户数与异常数、白名单数量、已自定义项数、ZDR／联网搜索开关、服务状态）；
   组内有未填好的数字时，**收起状态**下额外挂错误徽标（`groupInvalid`）。保存按钮在校验失败时仍禁用，保存条
   多一个「定位」按钮：展开出错分组（`invalidGroups`）并聚焦第一个 `aria-invalid` 控件。折叠是**纯呈现层**：
   各字段的暂存、校验与整批提交路径不变。摘要与定位的判定都是导出纯函数，由 `tests/section.test.ts`、
   `tests/group-fold.test.ts` 固定。
+- **设置页卡片化重设计（2026-10-29，用户确认设计稿后实施）**：五个分组由扁平分隔改为 16px 圆角卡片
+  （`src/client/page-styles.ts`，`divided` 道具随分隔线一并删除）；页头新增状态总览条（账户健康、月额度剩余、
+  服务状态、模型范围，`StatusStrip`），文案全部复用分组已有的摘要与余额字符串，不新增词条。动效体系：
+  `--cc-ease-out`（`cubic-bezier(.22,1,.36,1)`）统一曲线，开关 40×24、全部可点元素 `:active` 缩放 0.97、
+  用量条由 `width` 动画改为 `scaleX`（`transform` 才走 GPU）、保存条 48px 且出场快于入场无回弹、卡片首屏
+  `@starting-style` + 40ms  stagger 入场；`prefers-reduced-motion` 下整页动效一刀切。行间 .5px 细线是
+  有意推翻 2026-10-21「行间不画线」的决定：卡片内无分界时行与行会粘在一起。
 - **自定义上下文长度（issue #86）**：`Config.contextWindow`（全局值）与 `Config.contextWindowOverrides`
   （按模型，键为目录 id）覆盖宣告给宿主的上下文窗口，解析顺序为按模型 → 全局 → 目录。页面上是
   「模型与上下文」分组内平铺的两段内容（`ContextCard` 渲染，直接排在「隐藏套餐外模型」开关与可见模型
