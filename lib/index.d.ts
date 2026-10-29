@@ -61,7 +61,7 @@ type CommandCodeProtocol = 'cli' | 'openai' | 'messages';
 declare const DEFAULT_MAX_OUTPUT_TOKENS = 131072;
 //#endregion
 //#region src/adapter.d.ts
-declare const COMMAND_CODE_CLI_VERSION = "1.88.0";
+declare const COMMAND_CODE_CLI_VERSION = "1.88.1";
 declare const DEFAULT_API_BASE = "https://api.commandcode.ai";
 /**
  * The output budget this bundle asks for, and the ceiling it will never exceed.
@@ -932,6 +932,21 @@ declare class CommandCodeAccountPool {
    */
   markRejected(apiKey: string, rejection: AccountRejection, resetAtMs?: number): void;
   /**
+   * 用量报告读到的窗口结论（设置页账号卡片、`/commandcode` 拉取的
+   * `/alpha/billing/credits`）：某个窗口已超限，就按探测的同一口径给这个密钥
+   * 打标记——有可信重置时刻记为到期自动恢复的 `cooldown`，否则为 `unknown`。
+   *
+   * 为什么需要（issue #105）：轮转原本只认真实请求的拒绝，进程重启或冷却过早
+   * 到期后，卡片明明显示「每周 100%」，自动模式和「当前使用」徽标仍选列表第一个
+   * 账号，下一个请求白撞一次拒绝才换号。报告本来就要拉这个接口，把结论记进池里
+   * 不增加任何请求。
+   *
+   * 只加不减：窗口未超限时不清除已有标记。限流（throttle）或消费上限这类拒绝
+   * 在窗口数据里看不到（issue #54），据此清标记会让每次刷新卡片都换来一次注定
+   * 被拒的请求；清除仍只走有节流的探测路径。401 禁用的密钥不改。
+   */
+  noteWindowReport(apiKey: string, verdict: AccountWindowProbe | undefined): void;
+  /**
    * Record a model-scoped `unavailable` rejection (no credits, or a model
    * outside this account's plan) as a SHORT-LIVED PREFERENCE demotion.
    *
@@ -1217,7 +1232,7 @@ declare const KNOWN_THINKING_MODELS: ReadonlySet<string>;
  * `/docs/plans/max` and `/docs/resources/pricing-limits`). Each plan's model
  * list is a superset of the one below it: Go ⊂ GOAT ⊂ Pro ⊂ Provider/Max.
  * Models absent from every plan list (Claude Opus/Fable, Fugu Ultra) are
- * Provider-tier. Re-verified at command-code@1.88.0 (2026-10-27) against the
+ * Provider-tier. Re-verified at command-code@1.88.1 (2026-10-28) against the
  * live `?view=client` catalog: 106 ids, still a strict superset chain. Mistral
  * Large 4 (1.75.0) was the only addition at the 1.77.0 check; the 1.78.0/1.79.0 pair
  * added Claude Haiku 5.5 at Pro and the free Glyph Cluster preview at Go.

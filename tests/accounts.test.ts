@@ -489,6 +489,53 @@ test('activeAccount neither throws nor picks anything when every account is trul
   assert.equal(active, undefined)
 })
 
+// noteWindowReport(): the usage report's own window facts (issue #105) — an
+// exhausted weekly window must take the account out of auto selection and the
+// badge before any request is rejected, without costing a probe.
+
+test('a usage report with an exceeded window moves auto selection and the badge to the next account', async () => {
+  const { pool, probeCalls } = makePool(TWO_ACCOUNTS)
+  const resetAt = Date.now() + 3 * 86_400_000
+  pool.noteWindowReport('key-1', { exceeded: true, resetAt })
+  assert.equal((await pool.activeAccount())?.slot.id, 'account-2')
+  assert.equal((await pool.resolveKey())?.key, 'key-2')
+  const marked = (await pool.describeAccounts()).find((account) => account.key === 'key-1')
+  assert.deepEqual(marked?.state && { kind: marked.state.kind, cause: marked.state.cause, until: marked.state.until }, {
+    kind: 'cooldown',
+    cause: 'window',
+    until: resetAt,
+  })
+  assert.deepEqual(probeCalls, [], 'the report already carries the window; no probe is bought')
+})
+
+test('a report-stamped cooldown returns the account by the clock', async () => {
+  const { pool } = makePool(TWO_ACCOUNTS)
+  pool.noteWindowReport('key-1', { exceeded: true, resetAt: Date.now() - 1 })
+  // A reset already in the past: the cooldown is expired on arrival.
+  assert.equal((await pool.resolveKey())?.key, 'key-1')
+})
+
+test('a usage report never clears a mark and never touches a disabled key', async () => {
+  const { pool } = makePool(TWO_ACCOUNTS)
+  pool.markRejected('key-1', 'throttled')
+  pool.noteWindowReport('key-1', { exceeded: false, resetAt: 0 })
+  pool.noteWindowReport('key-1', undefined)
+  assert.equal((await pool.resolveKey())?.key, 'key-2', 'an open window cannot clear a throttle mark')
+  pool.markRejected('key-2', 'invalid-credential')
+  pool.noteWindowReport('key-2', { exceeded: true, resetAt: Date.now() + 3_600_000 })
+  const disabled = (await pool.describeAccounts()).find((account) => account.key === 'key-2')
+  assert.equal(disabled?.state?.kind, 'disabled')
+})
+
+test('a usage report without a trusted reset leaves an unknown window mark', async () => {
+  const { pool } = makePool(TWO_ACCOUNTS)
+  pool.noteWindowReport('key-1', { exceeded: true, resetAt: 0 })
+  const marked = (await pool.describeAccounts()).find((account) => account.key === 'key-1')
+  assert.equal(marked?.state?.kind, 'unknown')
+  assert.equal(marked?.state?.cause, 'window')
+  assert.equal((await pool.resolveKey())?.key, 'key-2')
+})
+
 test('activeAccount on an empty pool resolves to undefined', async () => {
   const { pool } = makePool({ slots: [] })
   assert.equal(await pool.activeAccount(), undefined)

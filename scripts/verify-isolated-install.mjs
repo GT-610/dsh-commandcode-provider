@@ -29,8 +29,9 @@ const requiredHarnessPeers = Object.keys(manifest.peerDependencies ?? {})
 /**
  * 已验证引擎版本集合：取自 `dsh.compatibility.dshReleases`。
  *
- * 准入范围（`engines.dsh`）是「同 0.2.1 通道、rc.2 及以上」的区间，会自动放行未来的同通道
- * RC；但隔离安装矩阵必须逐版本真实装一遍，所以这里的矩阵来源是**记录**而不是范围。
+ * 准入范围（`engines.dsh`）是「同通道区间」，会自动放行未来的同通道版本；但隔离安装矩阵
+ * 必须逐版本真实装一遍，所以这里的矩阵来源是**记录**而不是范围。区间自 2026-10-28 起有两个
+ * 并列分支（`0.2.1` 的 `-rc.N` 与 `0.2.2` 的 `-alpha.N`），解析见下方 `CHANNEL_BRANCH`。
  * 断言锚点选 `@deepseek-ai/dsh-llm`：它是适配器的宿主底座，任何 fresh generation 都必须
  * 解析到它。`dsh-invariants` 曾承担这个角色，但上游在 0.2.1-alpha.1 删除了整个包
  * （npm 上从未发布该版本），因此插件不再声明它。
@@ -42,21 +43,56 @@ if (typeof declaredPeerRange !== 'string') throw new Error('manifest declares no
 const declaredVersions = Object.keys(manifest.dsh?.compatibility?.dshReleases ?? {}).sort()
 if (declaredVersions.length === 0) throw new Error('package.json declares no dsh.compatibility.dshReleases')
 
-const channelRange = /^>=(\d+\.\d+\.\d+-rc\.(\d+)) <\d+\.\d+\.\d+-0$/.exec(declaredPeerRange)
-if (channelRange === null) {
-  throw new Error(
-    'the @deepseek-ai/dsh-llm peer range must be a same-channel range '
-    + `">=<newest verified RC> <next minor>-0", got ${JSON.stringify(declaredPeerRange)}`,
-  )
+/** 一个通道分支：">=<下界预发布> <<同一 major.minor 的下一个 patch>-0"。 */
+const CHANNEL_BRANCH = /^>=(\d+\.\d+\.\d+)-([0-9A-Za-z.-]+) <(\d+\.\d+\.\d+)-0$/
+/** 预发布类型的 semver 优先级：alpha < beta < rc。 */
+const PRERELEASE_ORDER = { alpha: 0, beta: 1, rc: 2 }
+
+/** 一条记录在某个通道内的等级；不属于该通道时返回 undefined。正式版高于任何预发布。 */
+function releaseRank(version, channel) {
+  const dash = version.indexOf('-')
+  const bare = dash === -1 ? version : version.slice(0, dash)
+  if (bare !== channel) return undefined
+  if (dash === -1) return Number.MAX_SAFE_INTEGER
+  const [kind, serial] = version.slice(dash + 1).split('.')
+  const order = PRERELEASE_ORDER[kind]
+  if (order === undefined) throw new Error(`${version} uses an unsupported prerelease kind ${String(kind)}`)
+  return order * 1000 + Number(serial)
 }
-const lowerPrefix = channelRange[1].slice(0, channelRange[1].indexOf('-')).replaceAll('.', '\\.')
-const lowerRank = Number(channelRange[2])
+
+// 自 2026-10-28 起准入范围有两个并列分支（用户拍板「放开整个 0.2.2 通道」）：
+// `0.2.1` 的 `-rc.N` 通道与 `0.2.2` 的 `-alpha.N` 通道。这里逐个分支解析，
+// 再要求每条记录落在某个分支的通道内、且不早于该分支已验证的下界。
+const branches = declaredPeerRange.split(' || ').map((branch) => {
+  const admitted = CHANNEL_BRANCH.exec(branch)
+  if (admitted === null) {
+    throw new Error(
+      'each @deepseek-ai/dsh-llm peer range branch must be a same-channel range '
+      + `">=<newest verified prerelease> <next patch>-0", got ${JSON.stringify(branch)} `
+      + `in ${JSON.stringify(declaredPeerRange)}`,
+    )
+  }
+  const [, channel, prerelease] = admitted
+  const lowerRank = releaseRank(`${channel}-${prerelease}`, channel)
+  if (lowerRank === undefined) throw new Error(`branch ${JSON.stringify(branch)} lower bound must be a prerelease`)
+  return { channel, lowerRank }
+})
+if (branches.length < 1 || branches.length > 2) {
+  throw new Error(`expected one or two channel branches, got ${branches.length}`)
+}
 for (const version of declaredVersions) {
-  const parsed = new RegExp(`^${lowerPrefix}(?:-rc\\.(\\d+))?$`).exec(version)
-  const rank = parsed === null ? Number.NaN : (parsed[1] === undefined ? Number.MAX_SAFE_INTEGER : Number(parsed[1]))
-  if (!(rank >= lowerRank)) {
+  const owners = branches
+    .map((branch) => ({ branch, rank: releaseRank(version, branch.channel) }))
+    .filter((entry) => entry.rank !== undefined)
+  if (owners.length === 0) {
     throw new Error(
       `dsh.compatibility.dshReleases lists ${version}, which ${JSON.stringify(declaredPeerRange)} does not admit`,
+    )
+  }
+  if (!owners.some(({ branch, rank }) => rank >= branch.lowerRank)) {
+    throw new Error(
+      `dsh.compatibility.dshReleases lists ${version}, which is older than the verified lower bound `
+      + `of its channel in ${JSON.stringify(declaredPeerRange)}`,
     )
   }
 }

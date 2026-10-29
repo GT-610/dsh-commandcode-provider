@@ -24,6 +24,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   headersTimeoutAdvice,
+  windowVerdict,
 } from '../src/adapter.ts'
 import {
   KNOWN_EFFORTS,
@@ -6128,8 +6129,8 @@ test('known efforts snapshot covers the models the catalog advertises', () => {
   assert.deepEqual(KNOWN_EFFORTS['stealth/glyph-cluster:free'], ['low', 'medium', 'high', 'xhigh'])
   assert.ok(!KNOWN_THINKING_MODELS.has('claude-haiku-5-5'))
   assert.ok(!KNOWN_THINKING_MODELS.has('stealth/glyph-cluster:free'))
-  // 2026-10-24: Kimi K3.1 Pro is catalog-only in the 1.88.0 artifact (the CLI
-  // registry does not name it yet) and serves the same three selectable levels
+  // 2026-10-24: Kimi K3.1 Pro was catalog-only in the 1.88.0 artifact (the CLI
+  // registry names it from 1.88.1) and serves the same three selectable levels
   // as its K3 predecessor, so it belongs here and not in the thinking set.
   assert.deepEqual(KNOWN_EFFORTS['moonshotai/Kimi-K3.1-Pro'], ['low', 'high', 'max'])
   assert.ok(!KNOWN_THINKING_MODELS.has('moonshotai/Kimi-K3.1-Pro'))
@@ -6668,7 +6669,7 @@ test('CLI version and API base constants are stable', () => {
   // record — what each upstream version added and what was re-verified unchanged — lives
   // in CHANGELOG.md (whose newest published entry may lag the pinned constant); this
   // assertion pins the constant only.
-  assert.equal(COMMAND_CODE_CLI_VERSION, '1.88.0')
+  assert.equal(COMMAND_CODE_CLI_VERSION, '1.88.1')
   assert.equal(DEFAULT_API_BASE, 'https://api.commandcode.ai')
 })
 
@@ -7434,6 +7435,27 @@ test('probeWindowLimits() degrades to undefined on endpoint or shape failure', a
   // keeps its mark (a fail-safe, never a revival).
   const emptyWindows = makeAdapter({ fetchImpl: fetchReturning(200, JSON.stringify({ windowLimits: {} })) })
   assert.equal(await emptyWindows.probeWindowLimits('key-1'), undefined)
+})
+
+test('windowVerdict() gives the usage report the same answer the pool probe reads (issue #105)', async () => {
+  // The settings card and the probe read the same endpoint; the report's parsed
+  // windows must yield the verdict the probe would, or the card shows a spent
+  // weekly window while auto selection still treats the account as usable.
+  const body = {
+    windowLimits: {
+      fiveHour: { used: 0, cap: 5, exceeded: false, resetAt: FIVE_HOUR_RESET },
+      weekly: { used: 6, cap: 6, exceeded: true, resetAt: WEEKLY_RESET },
+    },
+  }
+  const adapter = makeAdapter({ fetchImpl: fetchReturning(200, JSON.stringify(body)) })
+  const report = await adapter.getUsage('key-1')
+  const verdict = windowVerdict([report.credits?.fiveHour, report.credits?.weekly])
+  assert.deepEqual(verdict, { exceeded: true, resetAt: WEEKLY_RESET })
+  assert.deepEqual(await adapter.probeWindowLimits('key-1'), verdict)
+  // An untrusted reset (beyond the 30-day horizon) is dropped, never pinned.
+  const far = { used: 6, cap: 6, exceeded: true, resetAt: Date.now() + 60 * 86_400_000 }
+  assert.deepEqual(windowVerdict([far]), { exceeded: true, resetAt: 0 })
+  assert.equal(windowVerdict([undefined, undefined]), undefined)
 })
 
 test('providerRetryPolicy() pins the near-unbounded transient-only retry policy', () => {

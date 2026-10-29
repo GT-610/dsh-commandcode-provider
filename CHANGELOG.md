@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **同步 Command Code CLI `1.88.0` → `1.88.1`（纯请求头同步）。** npm `latest` 于 `2026-10-27T23:06Z` 前进到 `1.88.1`，官方变更日志没有该版本条目（最新 CLI 条目仍是 `1.88.0`），所以结论来自产物级静态比对：请求路径、自定义请求头、环境变量与 `commandcode.ai` 地址的字符串集合（两版各 105 项）完全相同；`promptCache`（5）、`reasoning_effort`（7）、`max_tokens`（12）、`cache_control`（1）等字面量出现次数相同，`/alpha/generate` 调用点在屏蔽混淆标识符后逐字相同；订阅表与 ZDR（零数据保留）例外集（18）在审计 `cliDiff` 中为空。注册表唯一变化是新收录 `gpt-6.1-terra` 与 `moonshotai/Kimi-K3.1-Pro`——这两行快照早已按服务端目录收录，推理档位（五档／`low`、`high`、`max`）与上下文窗口（1,050,000／1,048,576）与快照一致，所以**所有快照表零变化**，`COMMAND_CODE_CLI_VERSION` 只随请求头更新，运行时行为不变。服务端目录没有再动（`?view=client` 的 `catalogVersion` 仍 `7f405e24…`，默认 94、client 106 行）；审计在两条已知定价别名（`minimax/minimax-m3.1-flash`、`ornith/ornith-1.5-122b`）确认后为 `review-required`、错误 0，`candidateDiffs` 为空。官方 Desktop `0.1.58`／`0.1.59`（10-26／10-27）新增 Providers 页并把 Kimi K3.1 Pro 与 GPT-6.1 Terra 加入选择器，另有「首个回复前停滞更快切换备用 provider」「模型错误区分 provider 拒绝请求」两条说明；它们属 Desktop 行为，未验证对插件所连服务端的影响。
+- **适配 DSH `0.2.2-alpha.2`：并行准入 `0.2.2` 通道，Node 下界抬到 `24.9`。**
+  - **准入范围**：`engines.dsh`、`dsh.compatibility.dsh` 与全部 34 个 `@deepseek-ai/dsh-*` peer／开发依赖改为 `>=0.2.1-rc.2 <0.2.2-0 || >=0.2.2-alpha.2 <0.2.3-0`。两个分支并列是因为 `0.2.1` 的预发布序列是 `-rc.N`、`0.2.2` 的是 `-alpha.N`，一个区间表达不了；把上界推到 `0.3.0-0` 会连两代之间的空档一起放行。`dsh.compatibility.dshReleases` 补入 `0.2.2-alpha.2`（四条实测记录，`test:engine` 与 `test:install` 均 4/4）。
+  - **Node.js 要求从 22 提高到 24.9（不兼容旧 Node）**：`@deepseek-ai/dsh@0.2.2-alpha.2` 自己声明 `engines.node >=24.9.0`，插件既然准入它，整包下界就必须跟到同一水位。**在 Node 22/23 上安装或更新本插件会报 `EBADENGINE`**（警告，除非 npm 设了 `engine-strict=true`），且 `0.2.2` 引擎在那里确实起不来。`0.2.1` 的 RC 引擎仍能在 Node 22 运行，但 `engines.node` 是整包唯一的下界，对它们同样生效——这是同时准入两个通道的代价。执行 `nvm install 24 && nvm use 24` 或换用任意 Node 24.9+ 发行版即可。
+  - **配套版本**：`@deepseek-ai/cordis` 改为 `~4.0.5 || 4.0.6-alpha.1`、`@deepseek-ai/schemastery` 改为 `~3.18.5 || 3.18.6-alpha.1`。用精确版本而非 `~4.0.6-alpha.1` 分支，是因为后者会放行 `4.0.6-alpha.2` 这类没有任何引擎配对的版本。`0.2.2-alpha.2` 的 Cordis 把 Fiber 配置访问器拆成 `effectiveConfig`／`rawConfig`／`resolveConfig()`（`config`／`_config` 保留），`dsh-settings` 内部改读新访问器，因此它与 Cordis 必须成套升级。
+  - **CI**：三个 workflow 的 Node 从 22 升到 `24.9.0`。`publish.yml` 早已单独固定 `npm@11.21.0`，改 Node 不影响可信发布链。
+  - **插件代码无需改动**：rc.4 → alpha.2 共 7275 个变更路径、388 份包清单（采集错误为空），插件导入的 16 个宿主包无破坏性变化——`dsh-llm` 的 `LlmModelInfo.badge`、事件 `llm/models-updated`、`MessageSourceMap`／`PrincipalMap` 新成员，`dsh-web` 的 `WebSearchProvider.ready?()`、`searchReady()`／`fetchReady()`、`WebSource.summary`，`dsh-typert-protocol` 的 `TypertResourceDeclaration` 联合类型化，均为加性；插件用到的符号在 alpha.2 全部仍导出。
+  - **验证脚本两处适配**：分析历史夹具改用 `enter()` + `announce()`（`0.2.2-alpha.2` 在 `session/created` 通知完成前把会话保持只读，`enter()` 后立刻 `append()` 会抛错；`announce()` 在 rc.2 起就存在，旧引擎只是发出该事件，故不按引擎分支）；新增费用投影探针，在真实 `sessionProjections` 注册表上验证 `commandCodeCost` 的注册与折叠——这条路径此前没有任何真实引擎覆盖，而 `0.2.2-alpha.2` 恰好重写了投影注册契约（`register()` 运行时值改为可调用的 thenable，同步 `ctx.effect` 写法保留兼容）。
+  - **复查（2026-10-28 晚）**：GitHub 补发了 `dsh-v0.2.1-rc.4` 与 `dsh-v0.2.2-alpha.2` 的 tag 与 release 说明。`0.2.2-alpha.2` 发布说明里 6 条与插件作者相关的迁移项（同步会话投影注册、Cordis Timer 返回值、`agent/request` 不再改路由、`tools.resolve`／`executable`、`tools.mode`／`DSH_TOOLS_MODE`、`app-boot` 导入）**逐条核对均未触及**；「未声明容量的自定义模型默认 1M/128K」只影响 `llm-pi-ai` provider，插件经 `resolveModel` 显式宣告容量，`compaction-basic` 的缺少 context 硬错误在 rc.4 与 alpha.2 两版相同。另补类型验证：在只装 alpha.2 宿主包的隔离树里对 `src`／`tests`／`tsdown.config.ts` 跑 `tsc --noEmit`，**退出码 0**——`import type` 的漂移 `test:engine` 查不到，此前是盲区。`dsh-v0.2.1-rc.4` 的源码 delta 也已可采（369 个变更路径、349 份包清单、错误为空），插件导入的 16 个包非测试源码零变更，与此前产物级结论一致。
+  - **未采纳**：`LlmModelInfo.badge` 与 `llm/models-updated` 尚未接入选择器标记，`WebSearchProvider.ready?()` 与 `WebSource.summary` 也未使用——三者都改变用户可见行为或需要新的产品决定，留待单独评估。决策与代价见 `docs/决策记录.md` 第八章第 17 条，对接口径见 `docs/对接说明.md`。
+- **设置页卡片化重设计与交互手感（2026-10-29）。** 五个分组由扁平分隔改为 16px 圆角卡片，组头 52px、组标题 15px、页标题 22px，卡片内行间 .5px 细线；页头新增状态总览条（账户健康、月额度剩余、服务状态、模型范围），文案复用分组已有摘要与余额字符串，不新增词条；窄面板下状态条折为 2×2。动效统一走一条 ease-out 曲线：按钮、分段切换、图标按钮与「恢复默认」按下时轻微缩小（0.97／小图标 0.95），悬停底色与描边改为 150ms 渐变；保存条 48px，出现去掉回弹、出场快于入场；开关 40×24，底色与滑块同步过渡；额度进度条改用 `transform` 动画（满宽按比例 `translateX`，保留圆角端，不再触发重排）；卡片首屏错峰淡入上移，提示块轻微下落淡入；图标按钮的键盘焦点环统一为品牌色描边。所有悬停效果只在有精确指针的设备上生效，触屏点击不再残留悬停色；顺带修正了输入框校验失败时悬停会盖掉红色描边。开启「减少动态效果」时去掉位移与缩放、保留淡入淡出。分组与账户卡片的展开收起保持瞬间切换。另外，「账户」分组说明文字与下方内容原本 0 间距贴在一起，现在留 12px，分组说明下直接接提示块或按模型覆盖表时同样适用。
+
+### Fixed
+
+- **自动模式会选回用量已满的账号（#105）。** 账号卡片显示某账号「每周 100%」时，自动模式与「当前使用」徽标仍可能选它：轮转原本只认真实请求的拒绝标记，而标记只在内存里，进程重启或冷却提前到期后就没了，下一个请求要先白撞一次拒绝才换号。现在用量报告（设置页账号卡片、`/commandcode`）读到任一窗口已超限，就按账号池探测的同一口径给该账号打冷却标记，冷却到上游公布的重置时刻；报告本来就要请求这个接口，不增加任何调用。只打标记、不清标记：窗口显示未满时不会解除限流等窗口数据看不到的拒绝。
+
 ## [0.15.5] - 2026-10-27
 
 

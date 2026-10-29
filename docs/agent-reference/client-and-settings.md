@@ -288,12 +288,20 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   （`src/client/section.tsx`）——`h3` 包一个整行按钮，箭头在标题左侧，「刷新」这类分组动作放在按钮外。
   默认只展开「账户」（页头的「全部展开／全部收起」已按用户要求删除）；展开状态存在浏览器本地一个键
   `@mars-sea/dsh-commandcode-provider/settings-fold`（`src/client/group-fold.ts`，缺失、损坏或存储被禁用时回落
-  默认，不进配置文档、不随 profile 同步）。收起的正文用 `hidden` 保留挂载，`aria-controls` 始终有效。
+  默认，不进配置文档、不随 profile 同步）。收起的正文以 `hidden` 保留挂载（有意不加动画：分组折叠发生得
+  太频繁），`aria-controls` 始终有效。
   标题旁摘要徽标展开收起都显示（账户数与异常数、白名单数量、已自定义项数、ZDR／联网搜索开关、服务状态）；
   组内有未填好的数字时，**收起状态**下额外挂错误徽标（`groupInvalid`）。保存按钮在校验失败时仍禁用，保存条
   多一个「定位」按钮：展开出错分组（`invalidGroups`）并聚焦第一个 `aria-invalid` 控件。折叠是**纯呈现层**：
   各字段的暂存、校验与整批提交路径不变。摘要与定位的判定都是导出纯函数，由 `tests/section.test.ts`、
   `tests/group-fold.test.ts` 固定。
+- **设置页卡片化重设计（2026-10-29，用户确认设计稿后实施）**：五个分组由扁平分隔改为 16px 圆角卡片
+  （`src/client/page-styles.ts`，`divided` 道具随分隔线一并删除）；页头新增状态总览条（账户健康、月额度剩余、
+  服务状态、模型范围，`StatusStrip`），文案全部复用分组已有的摘要与余额字符串，不新增词条。版式：页标题
+  22/28、组标题 15/22（600）、组头 52px，卡片行间 .5px 细线。卡片首屏以 `@starting-style` + 40ms stagger
+  淡入并上移 8px（过渡而非关键帧，重渲染不重播）；`prefers-reduced-motion` 下只剩淡入。行间细线是有意
+  推翻 2026-10-21「行间不画线」的决定：卡片内无分界时行与行会粘在一起。动效与悬停策略统一见
+  「设置页动效与悬停（2026-10-29）」条目。
 - **自定义上下文长度（issue #86）**：`Config.contextWindow`（全局值）与 `Config.contextWindowOverrides`
   （按模型，键为目录 id）覆盖宣告给宿主的上下文窗口，解析顺序为按模型 → 全局 → 目录。页面上是
   「模型与上下文」分组内平铺的两段内容（`ContextCard` 渲染，直接排在「隐藏套餐外模型」开关与可见模型
@@ -340,6 +348,7 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   包含基础层隐藏项的显式覆盖。保存冲突或缺少原子写入能力时保留草稿。
   显示全部会选中已加载的目录模型；目录失败不清空已存选择。
 - **字号与校验说明**：页面及面板辅助文字至少 12px；重试次数提示与实际 0～50 次限制一致。
+- **设置页动效与悬停（2026-10-29）**：可按的元素（`cc-btn`、`cc-segItem`、`cc-iconButton`、`cc-resetInline`）`:active` 时缩放（0.97，20～28px 图标按钮 0.95），160ms `cubic-bezier(.23,1,.32,1)`；折叠箭头、卡片入场、保存条、额度进度条、`cc-notice` 入场共用这条曲线，颜色与描边 150ms `ease`。只动 `transform`／`opacity`／颜色：额度条 `cc-usageBarFill` 与 `cc-miniMeterFill` 满宽，按比例 `translateX` 左移（保留圆角端），`cc-notice` 用 `@starting-style` 从上方 4px 淡入；保存条 48px、不过冲、出场快于入场。所有 `:hover` 集中在页尾的 `(hover:hover) and (pointer:fine)` 块，块内校验失败的描边排在普通悬停之后，以同等优先级压住它；整行开关（分组标题、账户卡片头）悬停只加深箭头，不铺底色。`prefers-reduced-motion` 去掉缩放与位移、保留淡入与颜色。分组、账户卡片展开收起刻意不加动画。开关 40×24，底色与滑块同步过渡。约束由 `tests/styles.test.ts` 末尾四条用例锁定。分组说明 `cc-groupDesc` 下直接接账户列表、提示块组或覆盖表时留 12px（设置行自带 12px 内边距，不另加）。
 - **右侧只有一条边界（2026-10-22）**：设置行控件、账户卡片、分组头动作（「刷新」）、「查看模型用量」都贴内容
   右缘。为此「恢复默认」不在控件后面留列，而是放在标题行「已自定义」徽标后的 20px 圆形图标按钮（`OverrideTag`，
   `cc-resetInline`；只清空存储值的草稿只显示按钮）——同日先后试过「每行末尾留 28px 复位空位」与「卡片、分组头

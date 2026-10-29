@@ -771,6 +771,19 @@ async function checkEnrollmentStream(staged, engineModules) {
   finally { releaseWrite(); await ctx.fiber.dispose() }
 }
 
+/**
+ * 把一个 prepare 过的会话放进引擎的 SessionStore 并完成创建通知，返回 detach 释放函数。
+ * dsh 0.2.2-alpha.2 在 `session/created` 通知完成前把 store 持有的会话保持只读，`enter()` 之后
+ * 立刻 `append()` 会抛 "cannot append before session/created completes"。`announce()` 在插件支持的
+ * 每个引擎（rc.2 起）都存在、旧引擎上只是发出 `session/created`，也是真实创建者的调用方式，
+ * 所以探针一律通知，不按引擎分支。
+ */
+function enterAndAnnounce(ctx, session) {
+  const release = ctx.sessions.enter(session)
+  ctx.sessions.announce(session)
+  return release
+}
+
 /** 真实历史服务读取关闭会话和分支，真实 Gateway 校验查询及纯数字响应。 */
 async function checkAnalyticsHistory(staged, engineModules) {
   if (staged === undefined) return
@@ -821,13 +834,14 @@ async function checkAnalyticsHistory(staged, engineModules) {
       s.append('step/end', { turn, step: 1 })
       s.append('turn/end', { turn, reason: { kind: 'error', error: { code: 'UNKNOWN', message: '合成错误' } } })
     }
-    const parent = ctx.sessions.prepare('analytics-parent'), detach = ctx.sessions.enter(parent)
+    const enterAnnounced = session => enterAndAnnounce(ctx, session)
+    const parent = ctx.sessions.prepare('analytics-parent'), detach = enterAnnounced(parent)
     appendAttempt(parent, 1, 100)
     const original = await query.readSession(parent.id)
     stored.set(parent.id, original)
     detach()
     const child = ctx.sessions.prepare('analytics-child', { seed: original.events, inheritedEventCount: original.events.length, meta: { isSeeded: true, parentSession: parent.id } })
-    const detachChild = ctx.sessions.enter(child)
+    const detachChild = enterAnnounced(child)
     appendAttempt(child, 2, 200)
     stored.set(child.id, await query.readSession(child.id))
     detachChild()
@@ -844,6 +858,72 @@ async function checkAnalyticsHistory(staged, engineModules) {
     await assert.rejects(gateway.invoke({ namespace: 'commandcode', method: 'analytics', args: { query: { mode: 'recent', limit: 101 } }, ...peer === undefined ? {} : { peer } }))
     process.stdout.write('真实历史服务与 Gateway 已验证关闭会话、分支去重、计价和严格查询，无账号网络请求\n')
   } catch (error) { fail(`模型分析历史契约：${error.message}`) }
+  finally { globalThis.fetch = savedFetch; await ctx.fiber.dispose() }
+}
+
+/**
+ * 真实会话投影注册表上的费用投影。插件用 `ctx.effect(() => registry.register(...))` 的同步写法
+ * 注册 `commandCodeCost`；dsh 0.2.2-alpha.2 把 `register()` 的运行时返回值改成「可调用的 thenable」，
+ * 并在其 README 明确保留这种写法的清理所有权、注册本身不警告。此前没有任何检查在真实注册表上
+ * 跑过它，所以这里真的注册、驱动一个会话，再用 rc.2 起就有的 `snapshot()` 读折叠结果：注册失败、
+ * 折叠失败或视图形状漂移会在这里暴露，而不是在用户的会话费用读数里。
+ * 只用合成事件，不访问网络、不需要账号。
+ */
+async function checkCostProjection(staged, engineModules) {
+  if (staged === undefined) return
+  const require = createRequire(join(dirname(engineModules), 'cost-projection-probe.cjs'))
+  const load = async name => import(pathToFileURL(require.resolve(name)).href)
+  const [{ Context, Service }, { default: SessionStore }, { default: SessionQuery }, { TypertRegistry }, { TypertGatewayService }, { default: SessionProjectionRegistry }, plugin] = await Promise.all([
+    load(`${SCOPE}/cordis`), load(`${SCOPE}/dsh-session`), load(`${SCOPE}/dsh-session-query`), load(`${SCOPE}/dsh-typert-registry`), load(`${SCOPE}/dsh-api-gateway`), load(`${SCOPE}/dsh-session-projection`),
+    import(pathToFileURL(join(staged, 'lib', 'index.js')).href),
+  ])
+  const ctx = new Context(), savedFetch = globalThis.fetch
+  await engineOwnerPeer(ctx, load)
+  globalThis.fetch = async () => { throw new Error('合成费用投影检查不访问网络') }
+  class ProbeLlm extends Service {
+    constructor(c) { super(c, 'llm') }
+    registerConfigurableProviders() {}
+    registerAdapter() {}
+  }
+  // 插件组合需要一个 sessionPersistence 才能装起历史查询；本探针不读历史，给空存储即可。
+  class EmptyStorage extends Service {
+    identity = Symbol('cost-storage')
+    constructor(c) { super(c, 'sessionPersistence') }
+    async list() { return [] }
+    async stat() { return undefined }
+  }
+  try {
+    new ProbeLlm(ctx)
+    new EmptyStorage(ctx)
+    await pluginEngineRemoteAccess(ctx, load)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionQuery)
+    await ctx.plugin(TypertRegistry)
+    await ctx.plugin(TypertGatewayService, {})
+    // 注册表必须先于会话创建：它在 `session/created` 时才为已注册单元建 cell。
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin({ inject: plugin.inject, apply(c) { plugin.apply(c, { apiKeyEnv: 'COST_PROBE' }) } })
+    const registry = ctx.get('sessionProjections')
+    assert.ok(registry, '宿主没有提供 sessionProjections 服务')
+    const session = ctx.sessions.prepare('cost-probe'), release = enterAndAnnounce(ctx, session)
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('request/header', { header: { config: { provider: 'commandcode', model: 'gpt-5.6-luna' } }, reason: 'initial' })
+    session.append('assistant/attempt', { turn: 1, step: 1, stream: [{ type: 'chunk', time: Date.now(), chunk: { type: 'usage', usage: { inputTokens: 100, outputTokens: 7, cacheReadTokens: 40 } } }] })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'error', error: { code: 'UNKNOWN', message: '合成错误' } } })
+    const facts = registry.snapshot(session, ['commandCodeCost']).values.commandCodeCost
+    assert.ok(facts, '快照里没有 commandCodeCost：费用投影没有在真实注册表上注册成功')
+    assert.equal(facts.groups.length, 1, `期望折叠出 1 个计费分组，实际 ${facts.groups.length}`)
+    const [group] = facts.groups
+    assert.equal(group.provider, 'commandcode')
+    assert.equal(group.model, 'gpt-5.6-luna')
+    assert.equal(group.tokens.uncachedInputTokens, 100)
+    assert.equal(group.tokens.outputTokens, 7)
+    assert.equal(group.tokens.cacheReadTokens, 40)
+    release()
+    process.stdout.write('费用投影已在真实会话投影注册表上注册，并折叠出预期的计费分组（无账号网络请求）\n')
+  } catch (error) { fail(`费用投影契约：${error.message}`) }
   finally { globalThis.fetch = savedFetch; await ctx.fiber.dispose() }
 }
 
@@ -1206,6 +1286,7 @@ async function verify(options) {
     await checkToolHistory(staged, engine.modules)
     await checkEnrollmentStream(staged, engine.modules)
     await checkAnalyticsHistory(staged, engine.modules)
+    await checkCostProjection(staged, engine.modules)
     await checkSessionTitle(staged, engine.modules)
     await checkStreamSettlement(staged, engine.modules)
     await checkContextWindowBudget(staged, engine.modules)
