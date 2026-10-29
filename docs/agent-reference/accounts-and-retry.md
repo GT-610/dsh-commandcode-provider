@@ -20,12 +20,19 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   一次性任务。设置页侧的同一事实见 [client and settings](client-and-settings.md)。
 - **Multi-account rotation** (`src/accounts.ts` + the adapter's connect loop): the top-level key forms the
   `default` slot; `Config.accounts` (`[{ label, apiKeyEnv | apiKey }]`) adds more, in rotation order.
-  Rotation is **passive**: a key is marked only on a real pre-stream rejection (429 → `unknown`/`cooldown`
+  Rotation is **passive** on the request path: a key is marked only on a real pre-stream rejection (429 → `unknown`/`cooldown`
   carrying a `window` or `throttle` cause, 401 → `disabled`), and the adapter's `rotateApiKey` hook re-sends
   the same request with the next account's key (safe: nothing streamed, the body is account-independent,
   `threadId` preserves a valid UUID session identity, deterministically maps prefixed DSH session IDs to
   UUIDv5, and uses a random fallback only when no session ID is supplied — mid-stream failures NEVER
-  rotate). When every account is marked, the pool probes `/alpha/billing/credits` per key
+  rotate). **The usage report is the one other writer** (issue #105): `usageReports()` fetches every
+  account's report first, feeds each `report.credits` window pair through `windowVerdict()` (the SAME
+  verdict `probeWindowLimits()` returns) into `pool.noteWindowReport()`, and only then computes the active
+  badge — so a card showing a spent weekly window can no longer sit beside a "current" badge, and auto
+  selection skips the account with no wasted request after a restart dropped the in-memory marks. It stamps
+  exactly like a probe (`cooldown` to a trusted reset, else `unknown`/`window`), never touches a `disabled`
+  key, and NEVER clears a mark: an open window says nothing about a throttle or spend cap (issue #54), so
+  clearing stays on the throttled probe paths. When every account is marked, the pool probes `/alpha/billing/credits` per key
   (`probeWindowLimits`, which reads BOTH windows the endpoint publishes — the five-hour and the weekly one)
   to revive reset windows, else throws `RATE_LIMIT` naming the earliest `resetAt` (all-401 →
   `INVALID_CREDENTIAL`). State is keyed by gateway and API key, not slot — same-gateway shared credentials share one mark. **Manual
