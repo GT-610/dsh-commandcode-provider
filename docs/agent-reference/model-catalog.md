@@ -88,6 +88,20 @@ Task-specific reference moved from the former root `AGENTS.md`. All source and t
   66 → 67, image 72 → 73, vendored price rows 93 → 94; ZDR stays 18, output-limit rows stay 79,
   deals stay 4, thinking stays 16.
 
+  **Follow-up check (2026-10-28, CLI 1.88.0 → 1.88.1):** npm `latest` reached `1.88.1`
+  (10-27T23:06Z) with no changelog entry (the newest CLI entry is still `1.88.0`), so the conclusion
+  is artifact-level: endpoint paths, custom headers, environment variables and `commandcode.ai`
+  URLs form identical string sets (105 each), the `promptCache` / `reasoning_effort` /
+  `max_tokens` / `cache_control` literal counts match, the `/alpha/generate` call site is identical
+  once minified identifiers are masked, and subscriptions and the ZDR exception set (18) are
+  unchanged. The registry now names `gpt-6.1-terra` and `moonshotai/Kimi-K3.1-Pro` — the two
+  catalog-only rows above — with efforts and context equal to the snapshot, so the audit's
+  `absent from CLI registry` error for them is gone. The catalog did not move (`?view=client`
+  `catalogVersion` still `7f405e24…`, default 94 / client 106). The audit stays `incomplete` until the
+  two known pricing aliases (`minimax/minimax-m3.1-flash` → `minimax-m3.1-flash`,
+  `ornith/ornith-1.5-122b` → `ornith-1.5-122b`) are supplied via `--aliases`; with them it is
+  `review-required` with no errors and an empty `candidateDiffs`. No snapshot table changed.
+
   - `KNOWN_EFFORTS` — model → selectable reasoning-effort levels. Authoritative source is the live
     `?view=client` catalog's `reasoningEfforts` (since command-code@1.82.4 the CLI no longer keeps this map
     bundled — `getSupportedEfforts()` resolves it through the catalog, whose embedded bootstrap snapshot

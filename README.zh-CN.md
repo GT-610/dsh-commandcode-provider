@@ -18,7 +18,8 @@
 
 | | |
 |---|---|
-| 已验证引擎 | dsh `>=0.2.1-rc.2 <0.2.2-0`（`0.2.1` 通道中 `0.2.1-rc.2` 及以后的每个 RC） |
+| 已验证引擎 | dsh `0.2.1-rc.2`、`0.2.1-rc.3`、`0.2.1-rc.4`、`0.2.2-alpha.2` |
+| Node.js | **`>=24.9`** —— 本版从 22 提高，见[需要 Node.js 24.9 或更高版本](#需要-nodejs-249-或更高版本) |
 | 安装 —— 网页端 | `dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@latest` |
 | 安装 —— 终端端 | `dsh plugin --profile dsh-tui add @mars-sea/dsh-commandcode-provider@latest` |
 | 配置文件 | `$DSH_HOME/settings.yaml` → `llm-commandcode:` |
@@ -61,7 +62,19 @@
 dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@latest
 ```
 
-本构建准入 **dsh `>=0.2.1-rc.2 <0.2.2-0`** —— `0.2.1` 通道中 `0.2.1-rc.2` 及以后的每个 RC。`0.2.1-rc.2` 是 npm `latest` 指向的版本，`0.2.1-rc.4` 挂在 `next`；`0.2.1-rc.2`、`0.2.1-rc.3` 与 `0.2.1-rc.4` 都跑过完整引擎矩阵（`npm run test:engine`、`npm run test:install`）。更晚的 `0.2.1-rc.5` 无需更新插件即可准入，但在 `dsh.compatibility.dshReleases` 补上记录之前不算已验证。下一个 minor 被刻意排除（含 `0.2.2-rc.*`）—— 区间上界写成 `<0.2.2-0` 正是为了这一点。使用 `0.2.0-rc.2`、`0.2.1-alpha.5` 或更早版本的配置需先升级引擎，再安装本构建。兼容性细节 —— `engines.dsh` 准入规则、按引擎配对的包版本、验证证据 —— 见[引擎兼容](docs/agent-reference/engine-compatibility.md)。
+本构建准入 **dsh `>=0.2.1-rc.2 <0.2.2-0`** —— `0.2.1` 通道中 `0.2.1-rc.2` 及以后的每个 RC —— **以及 `>=0.2.2-alpha.2 <0.2.3-0`**，即 `0.2.2` 通道从当前 alpha 起的每个版本。`0.2.1-rc.2` 是 npm `latest` 指向的版本，`0.2.1-rc.4` 挂在 `next`，`0.2.2-alpha.2` 挂在 `alpha`；这四个版本都跑过完整引擎矩阵（`npm run test:engine`、`npm run test:install`）。两个通道中更晚的版本无需更新插件即可准入，但在 `dsh.compatibility.dshReleases` 补上记录之前不算已验证。`0.2.3` 及以后被刻意排除 —— 两个区间上界分别写成 `<0.2.2-0` 与 `<0.2.3-0` 正是为了这一点。使用 `0.2.0-rc.2`、`0.2.1-alpha.5` 或更早版本的配置需先升级引擎，再安装本构建。兼容性细节 —— `engines.dsh` 准入规则、按引擎配对的包版本、验证证据 —— 见[引擎兼容](docs/agent-reference/engine-compatibility.md)。
+
+### 需要 Node.js 24.9 或更高版本
+
+**本版把 Node.js 下界从 22 提到 24.9。如果你在用 Node 22 或 23，请先升级 Node，再更新本插件。**
+
+dsh `0.2.2-alpha.2` 自己声明 `engines.node >=24.9.0`，而本插件准入这个引擎，所以整包的 Node 下界必须跟着抬到同一水位：一个声称支持某引擎的插件，不该能被装到一个那个引擎根本起不来的 Node 上。实际影响：
+
+- 在 Node 22/23 上安装或更新本插件时，`npm` 会报 `EBADENGINE`。这是警告而非硬失败 —— 除非你的 npm 设了 `engine-strict=true`。
+- `0.2.2` 的引擎在 Node 22/23 上确实跑不起来，被准入却启动失败正是这条下界要挡的情况。
+- `0.2.1` 的 RC 引擎仍能在 Node 22 上运行，但 `engines.node` 是整包唯一的下界，所以对它们同样生效。这是在一个构建里同时准入两个通道的代价。
+
+执行 `nvm install 24 && nvm use 24`（或换用任意 Node 24.9+ 发行版）即可解决。Node 24 是当前 LTS 线。
 
 **更早的 dsh 版本**已不再支持：覆盖 dsh 0.1.7 的最后一个插件版本是 `0.11.17`，0.1.2–0.1.6 线的最后一个版本是 `0.11.11`，0.5.0 时代 Harness 线的最后一个版本是 `0.9.1` —— 三者都按精确版本安装，且都不再维护。
 
@@ -152,7 +165,7 @@ cmd login                               # 写入 ~/.commandcode/auth.json
 - **专用模型**：展开某个账户，从实时模型目录**多选**它的「专用模型」。请求这些模型且该账户可用时使用该账户；账户耗尽或密钥失效时自动回落到常规轮换。一个模型同一时间只属于一个账户，给另一个账户选择它会自动移过去（仍保存为 `modelAccountRules`）。
 - **只显示常用模型**：在「模型与上下文」卡片的「可见模型」中勾选要保留的模型，模型选择器只列出这些；不勾选则显示全部（默认行为不变）。
 
-每个账户行直接显示套餐、状态以及 5 小时 / 每周额度条，展开可查看完整报告，也可运行 `/commandcode`。等价的 YAML 见[配置](#配置)一节。
+每个账户行直接显示套餐、状态以及 5 小时 / 每周额度条，展开可查看完整报告，也可运行 `/commandcode`。刷新到某个窗口已用满时，该账户同时退出自动选择，直到窗口重置。等价的 YAML 见[配置](#配置)一节。
 
 ## 配置
 

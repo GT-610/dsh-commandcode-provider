@@ -18,7 +18,8 @@ Unofficial [DeepSeek Harness](https://deepseek-harness.github.io/deepseek-harnes
 
 | | |
 |---|---|
-| Verified engines | dsh `>=0.2.1-rc.2 <0.2.2-0` (every `0.2.1` RC from `0.2.1-rc.2` on) |
+| Verified engines | dsh `0.2.1-rc.2`, `0.2.1-rc.3`, `0.2.1-rc.4`, `0.2.2-alpha.2` |
+| Node.js | **`>=24.9`** — raised from 22 in this release, see [Node.js 24.9 or newer](#nodejs-249-or-newer-is-required) |
 | Install — web | `dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@latest` |
 | Install — terminal | `dsh plugin --profile dsh-tui add @mars-sea/dsh-commandcode-provider@latest` |
 | Config file | `$DSH_HOME/settings.yaml` → `llm-commandcode:` |
@@ -61,7 +62,19 @@ Unofficial [DeepSeek Harness](https://deepseek-harness.github.io/deepseek-harnes
 dsh plugin --profile web add @mars-sea/dsh-commandcode-provider@latest
 ```
 
-This build admits **dsh `>=0.2.1-rc.2 <0.2.2-0`** — every RC of the `0.2.1` channel from `0.2.1-rc.2` onward. `0.2.1-rc.2` is what npm `latest` runs and `0.2.1-rc.4` ships on `next`; `0.2.1-rc.2`, `0.2.1-rc.3` and `0.2.1-rc.4` are all covered by the full engine matrix (`npm run test:engine`, `npm run test:install`). A later `0.2.1-rc.5` is admitted without a plugin update, but stays unverified until a record is added to `dsh.compatibility.dshReleases`. The next minor is deliberately excluded, `0.2.2-rc.*` included — the upper bound is written `<0.2.2-0` for exactly that reason. A profile on `0.2.0-rc.2`, `0.2.1-alpha.5` or older must upgrade its engine first. Compatibility details — the `engines.dsh` admission rule, package pairings, evidence — live in [engine compatibility](docs/agent-reference/engine-compatibility.md).
+This build admits **dsh `>=0.2.1-rc.2 <0.2.2-0`** — every RC of the `0.2.1` channel from `0.2.1-rc.2` onward — **and `>=0.2.2-alpha.2 <0.2.3-0`**, the `0.2.2` channel from its current alpha. `0.2.1-rc.2` is what npm `latest` runs, `0.2.1-rc.4` ships on `next`, and `0.2.2-alpha.2` is on `alpha`. All four are covered by the full engine matrix (`npm run test:engine`, `npm run test:install`). A later release of either channel is admitted without a plugin update, but stays unverified until a record is added to `dsh.compatibility.dshReleases`. `0.2.3` and later are deliberately excluded — the upper bounds are written `<0.2.2-0` / `<0.2.3-0` for exactly that reason. A profile on `0.2.0-rc.2`, `0.2.1-alpha.5` or older must upgrade its engine first. Compatibility details — the `engines.dsh` admission rule, package pairings, evidence — live in [engine compatibility](docs/agent-reference/engine-compatibility.md).
+
+### Node.js 24.9 or newer is required
+
+**This release raises the Node.js floor from 22 to 24.9. On Node 22 or 23, upgrade Node before updating this plugin.**
+
+dsh `0.2.2-alpha.2` declares `engines.node >=24.9.0` and this plugin admits that engine, so the package-wide floor had to follow: a plugin that claims to support an engine must not be installable on a Node version that engine cannot start on. What that means in practice:
+
+- `npm` reports `EBADENGINE` when installing or updating this plugin on Node 22/23. It is a warning, not a hard failure, unless your npm sets `engine-strict=true`.
+- The `0.2.2` engines genuinely cannot run on Node 22/23, so a profile admitted there would fail at startup — the failure this floor exists to prevent.
+- The `0.2.1` RC engines still run on Node 22, but `engines.node` is a single floor for the whole package, so it applies to them too. That is the cost of admitting two channels in one build.
+
+`nvm install 24 && nvm use 24` (or any Node 24.9+ distribution) resolves it. Node 24 is a current LTS line.
 
 **Older dsh releases** are no longer supported: the last plugin release for dsh 0.1.7 is `0.11.17`, for 0.1.2–0.1.6 it is `0.11.11`, and for the 0.5.0-era line `0.9.1` — all installed by exact version, none maintained.
 
@@ -152,7 +165,7 @@ With several Command Code subscriptions, the plugin **switches to the next accou
 - **Dedicated models** — expand an account and pick its **Dedicated models** from the live catalog. Those requests serve from that account while it is usable; an exhausted account falls back to the normal rotation. A model belongs to one account at a time (stored as `modelAccountRules`).
 - **Show only favorite models** — the **Visible models** picker in the **Models & context** card keeps only the checked models in the picker; unchecked shows all (the default).
 
-Each account row shows its plan, status and 5-hour/weekly meters; expand it for the full report, or run `/commandcode`. The equivalent YAML is in [Configure](#configure).
+Each account row shows its plan, status and 5-hour/weekly meters; expand it for the full report, or run `/commandcode`. When a refreshed report shows a spent window, that account also leaves automatic selection until the window resets. The equivalent YAML is in [Configure](#configure).
 
 ## Configure
 

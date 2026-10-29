@@ -41,7 +41,7 @@ import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-settings'
-import { CommandCodeAdapter, DEFAULT_API_BASE, resolveAuthFileApiKey } from './adapter.ts'
+import { CommandCodeAdapter, DEFAULT_API_BASE, resolveAuthFileApiKey, windowVerdict } from './adapter.ts'
 import { absorbTransientFailure, resetTransientFailures, transientBudgetMessage } from './transient-retry.ts'
 import { DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_STREAM_IDLE_TIMEOUT_MS } from './adapter.ts'
 import type { AccountRotationReason, CommandCodeConnectionOptions, CommandCodeUsageReport } from './adapter.ts'
@@ -737,6 +737,22 @@ export function apply(ctx: Context, config: Config): void {
     // describeAccounts (not deduped) so two slots sharing one credential are
     // both reported as configured; the active badge follows the deduped
     // serving selection.
+    const keyed = new Map((await accounts.describeAccounts()).map((account) => [account.slot.id, account.key]))
+    const reports = await Promise.all(connection.accountSelection.slots.map(async (slot): Promise<CommandCodeUsageReport> => {
+      const key = keyed.get(slot.id)
+      if (key === undefined) return { failures: [] }
+      try {
+        const report = await adapter.getUsage(key, connection)
+        // 先把报告里已超限的窗口记进账号池，再算徽标：否则卡片显示「每周 100%」，
+        // 自动模式却仍把它当可用的第一个账号（issue #105）。
+        if (report.credits !== undefined) {
+          accounts.noteWindowReport(key, windowVerdict([report.credits.fiveHour, report.credits.weekly]))
+        }
+        return report
+      } catch (error: unknown) {
+        return { failures: [readableErrorText(error)] }
+      }
+    }))
     // activeAccount() (not the bare selectActiveAccount import) so a stale
     // `unknown` mark on the pinned account self-heals the same way a real
     // request would, instead of the badge reading it forever until the next
@@ -745,18 +761,9 @@ export function apply(ctx: Context, config: Config): void {
     // 先完成共享恢复，再读健康事实；不能用探测前的标记展示已恢复账号。
     const described = await accounts.describeAccounts()
     const byId = new Map(described.map((account) => [account.slot.id, account]))
-    const entries = await Promise.all(connection.accountSelection.slots.map(async (slot) => {
+    const entries = connection.accountSelection.slots.map((slot, index) => {
       const account = byId.get(slot.id)
-      let report: CommandCodeUsageReport
-      if (account === undefined) {
-        report = { failures: [] }
-      } else {
-        try {
-          report = await adapter.getUsage(account.key, connection)
-        } catch (error: unknown) {
-          report = { failures: [readableErrorText(error)] }
-        }
-      }
+      const report = reports[index] ?? { failures: [] }
       const state = account?.state
       // The mark mirrors servability: a usable account (never marked, or a
       // cooldown whose reset passed) shows no mark; a cooldown without a
@@ -771,7 +778,7 @@ export function apply(ctx: Context, config: Config): void {
         cooldownUntil: !usable && state?.kind === 'cooldown' ? state.until : 0,
         report,
       }
-    }))
+    })
     return { accounts: entries }
   }
 

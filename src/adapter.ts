@@ -88,19 +88,18 @@ export { DEFAULT_MAX_OUTPUT_TOKENS, MODEL_CATALOG_TTL_MS } from './gateway-facts
 // Request / connection defaults (protocol constants). The model/plan/deal
 // capability snapshot lives in ./capabilities.ts — the sync-only surface.
 // ---------------------------------------------------------------------------
-// Rides every request as `x-command-code-version`. The 1.88.0 bump is a pure
-// header sync: the 1.87.3 -> 1.88.0 artifacts add no runtime contract this
+// Rides every request as `x-command-code-version`. The 1.88.1 bump is a pure
+// header sync: the 1.88.0 -> 1.88.1 artifacts add no runtime contract this
 // plugin consumes. The release is silent upstream — the official changelog's
-// newest CLI entry is still 1.87.3 — so the conclusion is artifact-level: the
-// endpoint set, the custom request headers, the `/alpha/generate` call site,
-// the `promptCache` / `reasoning_effort` / `max_tokens` literals, the model
-// table's fields, the effort map, the subscription tables and the ZDR exception
-// set are identical. The only registry change is `hidden: true` on
-// `xiaomi/mimo-v2.5` and `xiaomi/mimo-v2.5-pro`, the same two rows the catalog
-// hid on 2026-10-23. The server catalog moved on 2026-10-24 instead: one row
-// was added (`moonshotai/Kimi-K3.1-Pro`, 1M context, $2/$10/$0.2, Go tier), so
-// the snapshots gain it — see ./capabilities.ts and ./model-prices.ts.
-export const COMMAND_CODE_CLI_VERSION = '1.88.0'
+// newest CLI entry is still 1.88.0 — so the conclusion is artifact-level: the
+// endpoint paths, custom request headers, environment variables, the
+// `/alpha/generate` call site, the `promptCache` / `reasoning_effort` /
+// `max_tokens` literal counts, the subscription tables and the ZDR exception
+// set are identical. The only registry change is that it now names
+// `gpt-6.1-terra` and `moonshotai/Kimi-K3.1-Pro` — both rows the snapshots
+// already carried from the server catalog (see ./capabilities.ts and
+// ./model-prices.ts), with matching efforts and context.
+export const COMMAND_CODE_CLI_VERSION = '1.88.1'
 export const DEFAULT_API_BASE = 'https://api.commandcode.ai'
 
 /**
@@ -1776,6 +1775,43 @@ function parseWindowLimit(value: unknown): CommandCodeCredits['fiveHour'] {
 }
 
 /**
+ * 把已解析的用量窗口归结为账号池能用的结论：任一窗口超限即 `exceeded`，
+ * `resetAt` 取超限窗口里最晚的重置时刻（真正卡住账号的那个）。
+ *
+ * 职责：`probeWindowLimits()`（池的探测）与用量报告（设置页卡片、`/commandcode`）
+ * 读的是同一个 `/alpha/billing/credits`，两条路径必须得出同一结论，否则卡片显示
+ * 「每周 100%」而池仍把它当可用（issue #105）。
+ *
+ * 一个窗口都没报告时返回 undefined：无从判断，调用方保持原标记不动。
+ */
+export function windowVerdict(
+  windows: readonly (CommandCodeCredits['fiveHour'])[],
+  now: number = Date.now(),
+): { exceeded: boolean; resetAt: number } | undefined {
+  let reported = false
+  let exceeded = false
+  let resetAt = 0
+  for (const window of windows) {
+    if (window === undefined) continue
+    reported = true
+    if (!window.exceeded) continue
+    exceeded = true
+    // Same untrusted-magnitude rule as the rejection body's reset: a value
+    // beyond the horizon is not a reset this route can act on, and pinning
+    // a cooldown to it would keep the account out of rotation for the life
+    // of the process (nothing probes a `cooldown`). Dropping it leaves the
+    // mark `unknown`, which the next probe pass re-checks.
+    if (window.resetAt > 0 && window.resetAt - now <= MAX_TRUSTED_RESET_MS) {
+      resetAt = Math.max(resetAt, window.resetAt)
+    }
+  }
+  // No window in the payload at all: nothing can be concluded, so the
+  // caller keeps the mark (fail-safe, exactly like a failed probe).
+  if (!reported) return undefined
+  return { exceeded, resetAt: exceeded ? resetAt : 0 }
+}
+
+/**
  * Parse one billing/credits payload into the report's credits section.
  * Returns undefined when the endpoint answered nothing usable.
  */
@@ -3251,28 +3287,7 @@ export class CommandCodeAdapter<C extends CommandCodeConnectionOptions = Command
       if (parsed === undefined) return undefined
       const windowLimits = isRecord(parsed.windowLimits) ? parsed.windowLimits : undefined
       if (windowLimits === undefined) return undefined
-      let reported = false
-      let exceeded = false
-      let resetAt = 0
-      for (const raw of [windowLimits.fiveHour, windowLimits.weekly]) {
-        const window = isRecord(raw) ? parseWindowLimit(raw) : undefined
-        if (window === undefined) continue
-        reported = true
-        if (!window.exceeded) continue
-        exceeded = true
-        // Same untrusted-magnitude rule as the rejection body's reset: a value
-        // beyond the horizon is not a reset this route can act on, and pinning
-        // a cooldown to it would keep the account out of rotation for the life
-        // of the process (nothing probes a `cooldown`). Dropping it leaves the
-        // mark `unknown`, which the next probe pass re-checks.
-        if (window.resetAt > 0 && window.resetAt - Date.now() <= MAX_TRUSTED_RESET_MS) {
-          resetAt = Math.max(resetAt, window.resetAt)
-        }
-      }
-      // No window in the payload at all: nothing can be concluded, so the
-      // caller keeps the mark (fail-safe, exactly like a failed probe).
-      if (!reported) return undefined
-      return { exceeded, resetAt: exceeded ? resetAt : 0 }
+      return windowVerdict([windowLimits.fiveHour, windowLimits.weekly].map(raw => isRecord(raw) ? parseWindowLimit(raw) : undefined))
     } catch {
       return undefined
     }
